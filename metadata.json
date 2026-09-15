@@ -1,0 +1,6 @@
+{
+  "name": "Agent Medina",
+  "description": "Aplicació web interactiva de gamificació per a opositores a Mossos d'Esquadra i Policia Local amb mode campanya (Tauler de l'Oca de 50 caselles), duels 1v1, economia de mèrits i repàs intel·ligent de la Guia Oficial 2026.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
