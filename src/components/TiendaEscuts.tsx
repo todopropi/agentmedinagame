@@ -90,51 +90,85 @@ export const TiendaEscuts: React.FC<TiendaEscutsProps> = ({
         </div>
 
         {/* Highlight Banner for Official TEDAX-NRBQ Patch */}
-        <div className="mt-6 p-4 sm:p-5 bg-gradient-to-r from-slate-950 to-slate-900 border border-amber-500/50 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-5">
-          <div className="flex flex-col sm:flex-row items-center gap-4 text-center sm:text-left">
-            <div className="shrink-0 p-1">
-              <TedaxBadge size={140} glow={true} />
-            </div>
-            <div>
-              <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-500/20 border border-amber-400/40 text-amber-300 text-[10px] font-black uppercase mb-1">
-                <Sparkles className="w-3 h-3" />
-                <span>Disseny Oficial Oficialment Renderitzat</span>
-              </div>
-              <h3 className="text-base font-black text-white">
-                Parche Personalitzat TEDAX - NRBQ
-              </h3>
-              <p className="text-xs text-slate-300 max-w-md mt-0.5">
-                Format ovalat negre amb vora daurada groga, 4 barres roges a l'esquerra, text TEDAX NRBQ i l'emblema central de la boina vermella amb espases creuades i flama.
-              </p>
-            </div>
-          </div>
+        {(() => {
+          const tedaxShield = SPECIALIZED_SHIELDS.find(s => s.id === 'tedax') || SPECIALIZED_SHIELDS[0];
+          const isTedaxUnlocked = user.unlockedShieldIds?.includes('tedax');
+          const isTedaxEquipped = user.equippedShieldId === 'tedax';
 
-          <div className="shrink-0">
-            {user.unlockedShieldIds?.includes('escut_tedax_nrbq') ? (
-              user.equippedShieldId === 'escut_tedax_nrbq' ? (
-                <div className="px-5 py-2.5 bg-emerald-500/20 border border-emerald-500 text-emerald-300 font-black text-xs rounded-xl flex items-center gap-1.5">
-                  <ShieldCheck className="w-4 h-4" />
-                  <span>EQUIPAT COM A AVATAR</span>
+          return (
+            <div className="mt-6 p-4 sm:p-5 bg-gradient-to-r from-slate-950 to-slate-900 border border-amber-500/50 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-5">
+              <div className="flex flex-col sm:flex-row items-center gap-4 text-center sm:text-left">
+                <div className="shrink-0 p-1">
+                  <TedaxBadge size={140} glow={true} />
                 </div>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => onEquipShield('escut_tedax_nrbq')}
-                  className="px-5 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs rounded-xl transition-all cursor-pointer shadow-md shadow-amber-500/20"
-                >
-                  Equipar aquest parche
-                </button>
-              )
-            ) : (
-              <button
-                type="button"
-                onClick={() => handleBuy(SPECIALIZED_SHIELDS.find(s => s.id === 'escut_tedax_nrbq')!)}
-                className="px-5 py-2.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black text-xs rounded-xl flex items-center gap-1.5 transition-all cursor-pointer shadow-lg shadow-amber-500/25"
-              >
-                <Coins className="w-4 h-4" />
-                <span>Desbloquejar per 1.200 Mèrits</span>
-              </button>
-            )}
+                <div>
+                  <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-500/20 border border-amber-400/40 text-amber-300 text-[10px] font-black uppercase mb-1">
+                    <Sparkles className="w-3 h-3" />
+                    <span>Insígnia d'Elit de Desactivació</span>
+                  </div>
+                  <h3 className="text-base font-black text-white">
+                    Parche Oficial TEDAX - NRBQ
+                  </h3>
+                  <p className="text-xs text-slate-300 max-w-md mt-0.5">
+                    Distintiu d'alta distinció reservat als millors opositors. Boina vermella amb espases creuades, flama i les 4 barres de la Senyera.
+                  </p>
+                </div>
+              </div>
+
+              <div className="shrink-0">
+                {isTedaxUnlocked ? (
+                  isTedaxEquipped ? (
+                    <div className="px-5 py-2.5 bg-emerald-500/20 border border-emerald-500 text-emerald-300 font-black text-xs rounded-xl flex items-center gap-1.5">
+                      <ShieldCheck className="w-4 h-4" />
+                      <span>EQUIPAT COM A AVATAR</span>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => onEquipShield('tedax')}
+                      className="px-5 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs rounded-xl transition-all cursor-pointer shadow-md shadow-amber-500/20"
+                    >
+                      Equipar aquest parche
+                    </button>
+                  )
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => handleBuy(tedaxShield)}
+                    className="px-5 py-2.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black text-xs rounded-xl flex items-center gap-1.5 transition-all cursor-pointer shadow-lg shadow-amber-500/25"
+                  >
+                    <Coins className="w-4 h-4" />
+                    <span>Desbloquejar per {tedaxShield.preuMerits.toLocaleString()} Mèrits</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* Guia d'Economia de Mèrits (Lògica de progressió i addicció) */}
+        <div className="mt-5 p-3.5 bg-slate-950/70 border border-slate-800 rounded-2xl">
+          <div className="flex items-center gap-2 text-xs font-black text-amber-400 mb-2">
+            <Award className="w-4 h-4" />
+            <span>COM ACONSEGUIR MÈRITS PER DESBLOQUEJAR ESCUTS:</span>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
+            <div className="p-2 rounded-xl bg-slate-900 border border-slate-800">
+              <span className="text-slate-400 block font-semibold">⚔️ Victòria vs Agent (45%)</span>
+              <span className="text-amber-300 font-mono font-black">+15 Mèrits</span>
+            </div>
+            <div className="p-2 rounded-xl bg-slate-900 border border-slate-800">
+              <span className="text-slate-400 block font-semibold">⚔️ Victòria vs Caporal (68%)</span>
+              <span className="text-amber-300 font-mono font-black">+25 Mèrits</span>
+            </div>
+            <div className="p-2 rounded-xl bg-slate-900 border border-slate-800">
+              <span className="text-slate-400 block font-semibold">⚔️ Victòria vs Sergent (85%)</span>
+              <span className="text-amber-300 font-mono font-black">+45 Mèrits</span>
+            </div>
+            <div className="p-2 rounded-xl bg-slate-900 border border-slate-800">
+              <span className="text-slate-400 block font-semibold">🎯 Tauler Oca / Ratxes</span>
+              <span className="text-amber-300 font-mono font-black">+2 a +50 Mèrits</span>
+            </div>
           </div>
         </div>
 

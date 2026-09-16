@@ -30,7 +30,7 @@ export interface UserProfile {
   savedMnemonicIds?: string[];
   createdAt?: number;
   lastLogin?: number;
-  isOnline?: boolean;
+  isOnline?: boolean; // <-- AÑADIDO PARA TIEMPO REAL
 }
 
 export type QuestionAmbit = 'Àmbit A' | 'Àmbit B' | 'Àmbit C' | 'Actualitat' | 'ISPC' | string;
@@ -93,7 +93,7 @@ export interface DuelGame {
   status: 'waiting' | 'active' | 'finished';
   winnerUid?: string;
   consecutiveCorrect: { [uid: string]: number }; // 0 to 3
-  botDifficulty?: 'aspirant' | 'caporal' | 'sergent';
+  botDifficulty?: 'agent' | 'caporal' | 'sergent' | 'aspirant';
   botAccuracy?: number;
   lastUpdated: number;
   shareCode: string;

@@ -7,7 +7,8 @@ import {
   saveDuelGameUpdate, 
   getHeadToHeadRecords,
   getStoredLeaderboard,
-  getAllRegisteredUsers 
+  getAllRegisteredUsers,
+  createDirectChallengeGame
 } from '../firebase';
 import { EscutMossosStripes } from './EscutMossosStripes';
 import { ShieldRenderer } from './ShieldRenderer';
@@ -43,7 +44,7 @@ interface ModeDuelsProps {
   onSaveQuestionToggle: (questionId: string) => void;
 }
 
-export type BotDifficulty = 'aspirant' | 'caporal' | 'sergent';
+export type BotDifficulty = 'agent' | 'caporal' | 'sergent' | 'aspirant';
 
 export interface BotProfileConfig {
   id: string;
@@ -58,37 +59,48 @@ export interface BotProfileConfig {
 }
 
 export const POLICE_BOTS: Record<BotDifficulty, BotProfileConfig> = {
-  aspirant: {
-    id: 'bot_aspirant_ia',
-    difficulty: 'aspirant',
-    name: 'Aspirant (IA)',
-    role: 'Nivell fàcil. Falla sovint: ideal per agafar ritme i encadenar ratlles.',
+  agent: {
+    id: 'bot_agent_ia',
+    difficulty: 'agent',
+    name: 'Agent (IA)',
+    role: 'Nivell Agent: 45% d\'encert. Falla amb freqüència, ideal per agafar ritme i sumar ratlles.',
     avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80',
     shieldId: 'escut_basico',
     accuracy: 0.45, // 45% encert
-    badge: '🎓',
+    badge: '👮',
     color: 'border-slate-800 hover:border-amber-500/40 text-slate-200 bg-slate-900/60'
   },
   caporal: {
     id: 'bot_caporal_ia',
     difficulty: 'caporal',
     name: 'Caporal (IA)',
-    role: 'Nivell mitjà. Domina el temari bàsic i aprofita els teus errors.',
+    role: 'Nivell Caporal: 68% d\'encert. Domina el temari clau i aprofita els teus errors.',
     avatar: 'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?auto=format&fit=crop&w=150&q=80',
     shieldId: 'escut_brimo',
     accuracy: 0.68, // 68% encert
-    badge: '👮',
+    badge: '🔽',
     color: 'border-slate-800 hover:border-amber-500/40 text-slate-200 bg-slate-900/60'
   },
   sergent: {
     id: 'bot_sergent_ia',
     difficulty: 'sergent',
     name: 'Sergent (IA)',
-    role: 'Nivell dur. Molt poques errades: hauràs de ser quirúrgic per guanyar-lo.',
+    role: 'Nivell Sergent: 85% d\'encert. Rigor absolut: molt poques errades per forçar el màxim nivell.',
     avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&q=80',
     shieldId: 'escut_gei',
     accuracy: 0.85, // 85% encert
     badge: '🎖️',
+    color: 'border-slate-800 hover:border-amber-500/40 text-slate-200 bg-slate-900/60'
+  },
+  aspirant: {
+    id: 'bot_agent_ia',
+    difficulty: 'agent',
+    name: 'Agent (IA)',
+    role: 'Nivell Agent: 45% d\'encert.',
+    avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80',
+    shieldId: 'escut_basico',
+    accuracy: 0.45,
+    badge: '👮',
     color: 'border-slate-800 hover:border-amber-500/40 text-slate-200 bg-slate-900/60'
   }
 };
@@ -144,11 +156,18 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
   const [selectedOptionKey, setSelectedOptionKey] = useState<string | null>(null);
   const [hasAnswered, setHasAnswered] = useState(false);
   const [isCorrectAnswer, setIsCorrectAnswer] = useState(false);
-  const [showHint, setShowHint] = useState(false);
   const [disabledOptions, setDisabledOptions] = useState<string[]>([]);
+  const [botActionNotification, setBotActionNotification] = useState<{
+    text: string;
+    type: 'stripe' | 'correct' | 'wrong';
+  } | null>(null);
 
   useEffect(() => {
     loadDuelsData();
+    const interval = setInterval(() => {
+      loadDuelsData();
+    }, 4000);
+    return () => clearInterval(interval);
   }, [user.uid]);
 
   const loadDuelsData = async () => {
@@ -321,7 +340,6 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
         setSelectedOptionKey(null);
         setHasAnswered(false);
         setIsCorrectAnswer(false);
-        setShowHint(false);
         setDisabledOptions([]);
       }
     };
@@ -352,7 +370,9 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
         spread: 60,
         origin: { y: 0.7 }
       });
-      onUpdateUserStats(50, 10);
+      // Recompensa per encert en duel: +20 XP, +2 Mèrits (combo +1 extra si ratxa >= 2)
+      const meritsPerAnswer = myStreak >= 1 ? 3 : 2;
+      onUpdateUserStats(20, meritsPerAnswer);
 
       // If stripe challenge -> paint +1 stripe!
       if (isStripeChallenge) {
@@ -378,7 +398,22 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
       };
 
       if (isWinner) {
-        onUpdateUserStats(300, 150);
+        // Bonificació victòria ponderada per dificultat (Agent 45%: +15, Caporal 68%: +25, Sergent 85%: +45)
+        let victoryMerits = 30;
+        let victoryXp = 250;
+        if (isRivalBot) {
+          if (currentBotProfile.difficulty === 'agent' || currentBotProfile.difficulty === 'aspirant') {
+            victoryMerits = 15;
+            victoryXp = 100;
+          } else if (currentBotProfile.difficulty === 'caporal') {
+            victoryMerits = 25;
+            victoryXp = 200;
+          } else if (currentBotProfile.difficulty === 'sergent') {
+            victoryMerits = 45;
+            victoryXp = 350;
+          }
+        }
+        onUpdateUserStats(victoryXp, victoryMerits);
       }
 
       await saveDuelGameUpdate(updatedGame);
@@ -418,12 +453,6 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
     setDisabledOptions(toDisable);
   };
 
-  // Powerup: Pista IA
-  const handleUseHint = () => {
-    AudioEngine.playClick();
-    setShowHint(true);
-  };
-
   // Continue from question
   const handleContinueAfterQuestion = () => {
     AudioEngine.playClick();
@@ -439,22 +468,45 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
   };
 
   // Start instant practice match against AI Bot with selected difficulty
-  const handleStartBotPractice = async (difficulty: BotDifficulty = 'caporal') => {
+  const handleStartBotPractice = async (difficulty: BotDifficulty = 'agent') => {
     AudioEngine.playClick();
-    const bot = POLICE_BOTS[difficulty];
-    const newGame = await createDuelGame(user);
-    const joined = await joinDuelGame(newGame.shareCode, {
-      ...user,
-      uid: bot.id,
-      displayName: bot.name,
-      photoURL: bot.avatar,
-      equippedShieldId: bot.shieldId
-    } as any);
+    setShowBotDifficultyModal(false);
+    setShowNewMatchModal(false);
 
-    if (joined) {
-      setActiveGame(joined);
-      setShowNewMatchModal(false);
+    const bot = POLICE_BOTS[difficulty] || POLICE_BOTS.agent;
+    const code = Math.random().toString(36).substring(2, 8).toUpperCase();
+    const gameId = 'duel_bot_' + Date.now() + '_' + code;
+
+    const botGame: DuelGame = {
+      id: gameId,
+      hostPlayerUid: user.uid,
+      hostPlayerName: user.displayName,
+      hostPlayerAvatar: user.photoURL,
+      hostPlayerShieldId: user.equippedShieldId,
+      guestPlayerUid: bot.id,
+      guestPlayerName: bot.name,
+      guestPlayerAvatar: bot.avatar,
+      guestPlayerShieldId: bot.shieldId,
+      hostRedStripes: 0,
+      guestRedStripes: 0,
+      currentTurnUid: user.uid,
+      status: 'active',
+      consecutiveCorrect: { [user.uid]: 0, [bot.id]: 0 },
+      lastUpdated: Date.now(),
+      shareCode: code,
+      botDifficulty: bot.difficulty,
+      botAccuracy: bot.accuracy,
+    };
+
+    // Immediatament activar la partida perquè l'arena s'obri a l'instant
+    setActiveGame(botGame);
+
+    // Guardar a storage local i sincronitzar
+    try {
+      await saveDuelGameUpdate(botGame);
       await loadDuelsData();
+    } catch (e) {
+      console.warn('Bot game persistence warning:', e);
     }
   };
 
@@ -463,13 +515,10 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
     AudioEngine.playClick();
     setIsChallengingUser(targetUser.uid);
     try {
-      const newGame = await createDuelGame(user);
-      const joined = await joinDuelGame(newGame.shareCode, targetUser);
-      if (joined) {
-        setActiveGame(joined);
-        setShowNewMatchModal(false);
-        await loadDuelsData();
-      }
+      const challengeGame = await createDirectChallengeGame(user, targetUser);
+      setActiveGame(challengeGame);
+      setShowNewMatchModal(false);
+      await loadDuelsData();
     } catch (e) {
       console.warn('Error launching challenge:', e);
     } finally {
@@ -491,20 +540,23 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
 
   // Determine which bot is playing to fetch its accurate accuracy
   const currentBotProfile = (() => {
-    if (!activeGame) return POLICE_BOTS.caporal;
+    if (!activeGame) return POLICE_BOTS.agent;
+    if (activeGame.botDifficulty && POLICE_BOTS[activeGame.botDifficulty]) {
+      return POLICE_BOTS[activeGame.botDifficulty];
+    }
     const botUid = activeGame.guestPlayerUid?.startsWith('bot_') 
       ? activeGame.guestPlayerUid 
       : activeGame.hostPlayerUid.startsWith('bot_') 
         ? activeGame.hostPlayerUid 
         : activeGame.currentTurnUid;
     
-    if (botUid.includes('aspirant')) return POLICE_BOTS.aspirant;
     if (botUid.includes('sergent')) return POLICE_BOTS.sergent;
-    return POLICE_BOTS.caporal;
+    if (botUid.includes('caporal')) return POLICE_BOTS.caporal;
+    return POLICE_BOTS.agent;
   })();
 
   const simulateBotTurn = () => {
-    if (!activeGame || isBotThinking || activeGame.currentTurnUid === user.uid || activeGame.status !== 'active') return;
+    if (!activeGame || isBotThinking || activeGame.currentTurnUid === user.uid || activeGame.status !== 'active' || currentQuestion !== null) return;
     setIsBotThinking(true);
     AudioEngine.playWheelTick();
 
@@ -519,20 +571,39 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
         let botStripes = isBotHost ? activeGame.hostRedStripes : activeGame.guestRedStripes;
         let botStreak = (activeGame.consecutiveCorrect && activeGame.consecutiveCorrect[activeGame.currentTurnUid]) || 0;
 
-        // Dynamic accuracy based on police difficulty level
+        // Dynamic accuracy based on police difficulty level (Agent 45%, Caporal 68%, Sergent 85%)
         const accuracy = currentBotProfile.accuracy;
         const botAnswersCorrectly = Math.random() < accuracy;
 
         if (botAnswersCorrectly) {
           botStreak += 1;
-          // If streak reached 3 or lucky ratlla question -> bot gets a red stripe!
-          const earnedStripe = botStreak >= 3 || Math.random() < 0.35;
+          // Bot wins a stripe on 3 consecutive hits OR on a stripe challenge (50% chance per correct answer)
+          const earnedStripe = botStreak >= 3 || Math.random() < 0.50;
           if (earnedStripe) {
             botStripes = Math.min(4, botStripes + 1);
             botStreak = 0;
+            AudioEngine.playCorrect();
+            setBotActionNotification({
+              text: `👮 ${currentBotProfile.name} ha encertat la pregunta i ha guanyat +1 Ratlla a l'Escut! (${botStripes}/4)`,
+              type: 'stripe'
+            });
+          } else {
+            AudioEngine.playClick();
+            setBotActionNotification({
+              text: `👮 ${currentBotProfile.name} ha encertat la pregunta! (${botStreak}/3 encerts)`,
+              type: 'correct'
+            });
           }
 
           const isBotWinner = botStripes >= 4;
+          if (isBotWinner) {
+            AudioEngine.playCorrect();
+            setBotActionNotification({
+              text: `🏆 ${currentBotProfile.name} ha assolit les 4 Ratlles de l'Escut Oficial i ha guanyat el duel!`,
+              type: 'stripe'
+            });
+          }
+
           const updatedGame: DuelGame = {
             ...activeGame,
             hostRedStripes: isBotHost ? botStripes : activeGame.hostRedStripes,
@@ -553,6 +624,12 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
           await loadDuelsData();
         } else {
           // Bot fails answer -> turn immediately returns to user!
+          AudioEngine.playWrong();
+          setBotActionNotification({
+            text: `❌ ${currentBotProfile.name} ha fallat la seva pregunta! El torn torna a ser teu.`,
+            type: 'wrong'
+          });
+
           const updatedGame: DuelGame = {
             ...activeGame,
             currentTurnUid: user.uid,
@@ -572,7 +649,7 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
       } finally {
         setIsBotThinking(false);
       }
-    }, 1800);
+    }, 1700);
   };
 
   useEffect(() => {
@@ -583,14 +660,14 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
     };
   }, []);
 
-  // Check if bot should take turn
+  // Check if bot should take turn (only when no question modal is covering the screen)
   useEffect(() => {
-    if (activeGame && activeGame.status === 'active' && activeGame.currentTurnUid !== user.uid) {
+    if (activeGame && activeGame.status === 'active' && activeGame.currentTurnUid !== user.uid && currentQuestion === null) {
       if (activeGame.currentTurnUid.startsWith('bot_')) {
         simulateBotTurn();
       }
     }
-  }, [activeGame?.currentTurnUid, activeGame?.id]);
+  }, [activeGame?.currentTurnUid, activeGame?.id, currentQuestion]);
 
   // Create duel with alias
   const handleCreateNewGame = async (e?: React.FormEvent) => {
@@ -728,6 +805,58 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
             </div>
           </div>
 
+          {/* Mode Rules Banner (Agent 45%, Caporal 68%, Sergent 85%) */}
+          <div className="flex items-center justify-between gap-3 px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-2xl text-xs flex-wrap">
+            <div className="flex items-center gap-2">
+              <span className="text-amber-400 font-black">⚙️ Regla de Mode:</span>
+              {isRivalBot ? (
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="px-2.5 py-1 rounded-lg bg-amber-500/15 text-amber-300 border border-amber-500/30 font-black text-xs">
+                    {currentBotProfile.badge} {currentBotProfile.name} • {(currentBotProfile.accuracy * 100).toFixed(0)}% d'encert
+                  </span>
+                  <span className="text-slate-400 text-[11px]">
+                    ({currentBotProfile.role})
+                  </span>
+                </div>
+              ) : (
+                <span className="text-sky-400 font-black text-xs">
+                  ⚔️ Duel 1v1 en línia • 4 Ratlles per guanyar
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-2 text-[11px] font-bold text-slate-300">
+              <span className="text-amber-400">Recompensa Victòria:</span>
+              <span className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 font-mono font-black">
+                +{isRivalBot 
+                  ? (currentBotProfile.difficulty === 'sergent' ? '45' : currentBotProfile.difficulty === 'caporal' ? '25' : '15') 
+                  : '30'} Mèrits
+              </span>
+            </div>
+          </div>
+
+          {/* Bot Action Notification Banner */}
+          {botActionNotification && (
+            <div className={`p-3.5 sm:p-4 rounded-2xl border flex items-center justify-between gap-3 text-xs sm:text-sm font-bold animate-fadeIn shadow-lg ${
+              botActionNotification.type === 'stripe'
+                ? 'bg-amber-950/70 border-amber-500/50 text-amber-200'
+                : botActionNotification.type === 'correct'
+                ? 'bg-sky-950/70 border-sky-500/50 text-sky-200'
+                : 'bg-rose-950/70 border-rose-500/50 text-rose-200'
+            }`}>
+              <div className="flex items-center gap-2.5">
+                <Bot className="w-5 h-5 shrink-0 text-amber-400" />
+                <span>{botActionNotification.text}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setBotActionNotification(null)}
+                className="text-slate-400 hover:text-white px-2 py-1 rounded bg-slate-800/60 hover:bg-slate-800 text-xs cursor-pointer shrink-0"
+              >
+                ✕ Tanca
+              </button>
+            </div>
+          )}
+
           {/* Dueling Shields Comparison (EL TEU ESCUT vs RIVAL ESCUT) */}
           <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-3 sm:p-5">
             <div className="grid grid-cols-3 items-center justify-items-center gap-2">
@@ -840,7 +969,7 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
                 </div>
               )}
 
-              {/* Powerups row */}
+              {/* Powerups row (50:50) */}
               <div className="flex items-center gap-2">
                 <button
                   onClick={handleUseFiftyFifty}
@@ -848,23 +977,8 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
                   className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-amber-400 font-black rounded-lg text-xs border border-slate-700 flex items-center gap-1 cursor-pointer min-h-[34px]"
                 >
                   <Sparkles className="w-3.5 h-3.5" />
-                  <span>50:50</span>
+                  <span>Comodí 50:50</span>
                 </button>
-
-                <button
-                  onClick={handleUseHint}
-                  disabled={hasAnswered || showHint}
-                  className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-sky-400 font-black rounded-lg text-xs border border-slate-700 flex items-center gap-1 cursor-pointer min-h-[34px]"
-                >
-                  <HelpCircle className="w-3.5 h-3.5" />
-                  <span>Pista IA</span>
-                </button>
-
-                {showHint && (
-                  <div className="flex-1 p-2 rounded-lg bg-sky-950/50 border border-sky-500/30 text-[11px] text-sky-200">
-                    💡 <b>Pista Medina:</b> {currentQuestion.hint}
-                  </div>
-                )}
               </div>
 
               {/* Question Text */}
@@ -913,43 +1027,37 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
               {/* Feedback & Continue */}
               {hasAnswered && (
                 <div className="pt-3 border-t border-slate-800 space-y-3">
-                  <div className={`p-3 rounded-xl border ${
+                  <div className={`p-4 rounded-2xl border ${
                     isCorrectAnswer 
                       ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-300' 
                       : 'bg-rose-950/40 border-rose-500/40 text-rose-300'
                   }`}>
-                    <div className="font-black text-sm flex items-center gap-2">
+                    <div className="font-black text-sm flex items-center justify-between gap-2">
                       <span>{isCorrectAnswer ? '✅ Resposta Correcta! (+50 XP, +10 Mèrits)' : '❌ Resposta Incorrecta!'}</span>
+                      <button
+                        type="button"
+                        onClick={() => onSaveQuestionToggle(currentQuestion.id)}
+                        className="text-xs font-bold px-2.5 py-1 rounded-lg bg-slate-800/90 hover:bg-slate-800 border border-slate-700 text-slate-300 flex items-center gap-1 cursor-pointer transition-colors"
+                      >
+                        {user.savedQuestionIds?.includes(currentQuestion.id) ? '⭐ Guardada' : '☆ Guardar'}
+                      </button>
                     </div>
-                    <p className="text-xs text-slate-300 mt-1 leading-relaxed">
-                      {currentQuestion.explanation}
-                    </p>
+                    <div className="mt-2.5 pt-2.5 border-t border-slate-800/80 text-xs text-slate-300 leading-relaxed space-y-1.5">
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                        <span className="font-bold text-sky-400 flex items-center gap-1.5">
+                          <span>📖 Cita Literal Guia d'Estudi Mossos d'Esquadra 2026:</span>
+                        </span>
+                        {currentQuestion.guiaPagina && (
+                          <span className="px-2 py-0.5 rounded bg-sky-950 text-sky-300 font-mono text-[11px] font-extrabold border border-sky-800/80 shadow-sm">
+                            {currentQuestion.guiaPagina}
+                          </span>
+                        )}
+                      </div>
+                      <p className="italic text-slate-200 pl-3 border-l-2 border-sky-500/60 leading-relaxed bg-slate-900/50 p-2.5 rounded-r-xl">
+                        "{currentQuestion.textLiteral || currentQuestion.explanation}"
+                      </p>
+                    </div>
                   </div>
-
-                  {/* Quadre per memoritzar (Concept Review Card) */}
-                  <ConceptReviewCard
-                    titol={currentQuestion.categoryName}
-                    items={[
-                      {
-                        concepte: `Resposta Correcta: ${currentQuestion.options.find(o => o.correct)?.text || ''}`,
-                        detall: currentQuestion.explanation,
-                        color: 'blue'
-                      },
-                      {
-                        concepte: 'Pista Clau d\'Examen',
-                        detall: currentQuestion.hint,
-                        color: 'red'
-                      },
-                      {
-                        concepte: 'Referència Oficial',
-                        detall: 'Contingut literal de la Guia d\'estudi de les oposicions de Mossos d\'Esquadra 2026.',
-                        color: 'green'
-                      }
-                    ]}
-                    reglaExamen={currentQuestion.hint}
-                    isSaved={Boolean(user.savedQuestionIds?.includes(currentQuestion.id))}
-                    onSaveToggle={() => onSaveQuestionToggle(currentQuestion.id)}
-                  />
 
                   <button
                     onClick={handleContinueAfterQuestion}
@@ -1379,27 +1487,30 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
 
             {/* Difficulty Cards */}
             <div className="space-y-3 pt-1">
-              {/* 1. Aspirant */}
+              {/* 1. Agent */}
               <div
                 onClick={() => {
                   setShowBotDifficultyModal(false);
-                  handleStartBotPractice('aspirant');
+                  handleStartBotPractice('agent');
                 }}
                 className="p-4 rounded-2xl bg-[#0e172a] hover:bg-[#131f38] border border-slate-850 hover:border-amber-500/40 cursor-pointer transition-all flex items-center justify-between gap-4 group"
               >
                 <div className="flex items-center gap-3.5 min-w-0">
                   <div className="w-11 h-11 rounded-xl bg-slate-800/80 border border-slate-700/60 flex items-center justify-center text-xl shrink-0 group-hover:scale-105 transition-transform">
-                    🎓
+                    👮
                   </div>
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-sm font-black text-white">Aspirant</span>
+                      <span className="text-sm font-black text-white">Agent</span>
                       <span className="text-[11px] font-black px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-400 border border-amber-500/30">
                         45% encert
                       </span>
+                      <span className="text-[10px] font-bold text-amber-300">
+                        +15 Mèrits
+                      </span>
                     </div>
                     <p className="text-xs text-slate-400 mt-1 leading-snug">
-                      Nivell fàcil. Falla sovint: ideal per agafar ritme i encadenar ratlles.
+                      Nivell Agent: 45% d'encert. Falla sovint: ideal per consolidar les primeres ratlles i agafar ritme.
                     </p>
                   </div>
                 </div>
@@ -1419,7 +1530,7 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
               >
                 <div className="flex items-center gap-3.5 min-w-0">
                   <div className="w-11 h-11 rounded-xl bg-slate-800/80 border border-slate-700/60 flex items-center justify-center text-xl shrink-0 group-hover:scale-105 transition-transform">
-                    👮
+                    🔽
                   </div>
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
@@ -1427,9 +1538,12 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
                       <span className="text-[11px] font-black px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-400 border border-amber-500/30">
                         68% encert
                       </span>
+                      <span className="text-[10px] font-bold text-amber-300">
+                        +25 Mèrits
+                      </span>
                     </div>
                     <p className="text-xs text-slate-400 mt-1 leading-snug">
-                      Nivell mitjà. Domina el temari bàsic i aprofita els teus errors.
+                      Nivell Caporal: 68% d'encert. Domina el temari bàsic i aprofita els teus errors per avançar.
                     </p>
                   </div>
                 </div>
@@ -1457,9 +1571,12 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
                       <span className="text-[11px] font-black px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-400 border border-amber-500/30">
                         85% encert
                       </span>
+                      <span className="text-[10px] font-bold text-amber-300">
+                        +45 Mèrits
+                      </span>
                     </div>
                     <p className="text-xs text-slate-400 mt-1 leading-snug">
-                      Nivell dur. Molt poques errades: hauràs de ser quirúrgic per guanyar-lo.
+                      Nivell Sergent: 85% d'encert. Molt poques errades: màxima precisió per aspirar al podi.
                     </p>
                   </div>
                 </div>

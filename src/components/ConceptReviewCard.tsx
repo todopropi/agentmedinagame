@@ -1,111 +1,112 @@
 import React from 'react';
-import { Bookmark, BookmarkCheck, CheckCircle2, Clock } from 'lucide-react';
+import { Bookmark, BookmarkCheck, BookOpen, Sparkles, CheckCircle2 } from 'lucide-react';
 import { ReviewConceptItem } from '../types';
 
 interface ConceptReviewCardProps {
   titol: string;
-  items: ReviewConceptItem[];
-  reglaExamen: string;
+  items?: ReviewConceptItem[];
+  reglaExamen?: string;
   onSaveToggle?: () => void;
   isSaved?: boolean;
 }
 
 export const ConceptReviewCard: React.FC<ConceptReviewCardProps> = ({
   titol,
-  items,
+  items = [],
   reglaExamen,
   onSaveToggle,
   isSaved = false
 }) => {
-  // Map color schemes for items following screenshot aesthetic (clean pastel tints with dark text & crisp borders)
-  const getColorClasses = (color: ReviewConceptItem['color']) => {
+  // Map color schemes for dark police tactical design
+  const getItemClasses = (color: ReviewConceptItem['color']) => {
     switch (color) {
       case 'blue':
-        return 'bg-sky-100/95 text-sky-950 border-sky-300';
+        return 'border-l-sky-500 bg-sky-950/30 text-sky-200 border-slate-800';
       case 'red':
-        return 'bg-rose-100/95 text-rose-950 border-rose-300';
+        return 'border-l-rose-500 bg-rose-950/30 text-rose-200 border-slate-800';
       case 'green':
-        return 'bg-emerald-100/95 text-emerald-950 border-emerald-300';
+        return 'border-l-emerald-500 bg-emerald-950/30 text-emerald-200 border-slate-800';
       case 'yellow':
-        return 'bg-amber-100/95 text-amber-950 border-amber-300';
+        return 'border-l-amber-500 bg-amber-950/30 text-amber-200 border-slate-800';
       default:
-        return 'bg-slate-100 text-slate-900 border-slate-300';
+        return 'border-l-slate-500 bg-slate-900/60 text-slate-300 border-slate-800';
     }
   };
 
   return (
-    <div className="w-full bg-white text-slate-900 rounded-3xl p-4 sm:p-6 shadow-2xl border border-sky-400/30 my-4 space-y-3.5">
-      {/* Header: Clock icon + Concept Title */}
-      <div className="space-y-2">
-        <div className="flex items-center gap-2">
-          <Clock className="w-5 h-5 text-slate-600 shrink-0" />
-          <h4 className="text-base sm:text-lg font-black text-slate-900 leading-snug">
-            {titol}
-          </h4>
-        </div>
-
-        {/* Badge: Quadre per memoritzar */}
-        <div>
-          <span className="inline-block px-3 py-1 rounded-full bg-sky-100 text-sky-700 text-xs font-bold border border-sky-300/80">
-            Quadre per memoritzar
+    <div className="w-full bg-[#0b1220] border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xl space-y-3.5 my-3">
+      {/* Header: Topic Title & Badge */}
+      <div className="flex items-center justify-between gap-3 flex-wrap border-b border-slate-800/80 pb-3">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="p-1.5 rounded-lg bg-sky-500/15 text-sky-400 border border-sky-500/25 shrink-0">
+            <BookOpen className="w-4 h-4" />
           </span>
-        </div>
-      </div>
-
-      {/* Pastel Concept Item Boxes */}
-      <div className="space-y-2.5">
-        {items.map((item, idx) => (
-          <div
-            key={idx}
-            className={`p-3 sm:p-3.5 rounded-2xl border ${getColorClasses(item.color)} text-xs sm:text-sm leading-relaxed`}
-          >
-            <span className="font-extrabold block text-[13px] sm:text-sm mb-0.5">
-              {item.concepte}
+          <div>
+            <span className="text-[10px] font-black uppercase tracking-wider text-sky-400 block">
+              Guia d'Estudi • Síntesi de Repàs
             </span>
-            <span className="font-medium text-slate-800">
-              {item.detall}
-            </span>
+            <h4 className="text-sm sm:text-base font-black text-white truncate max-w-sm sm:max-w-md">
+              {titol}
+            </h4>
           </div>
-        ))}
-      </div>
-
-      {/* "Com recordar per a l'examen" Box */}
-      <div className="p-3.5 sm:p-4 rounded-2xl bg-amber-50/90 border-l-4 border-l-amber-500 border border-amber-200 text-xs sm:text-sm leading-relaxed text-slate-900">
-        <div className="flex items-center gap-2 font-black text-slate-900 mb-1">
-          <span className="text-base">🧠</span>
-          <span>Com recordar per a l'examen:</span>
         </div>
-        <p className="text-slate-800 font-medium pl-6">
-          {reglaExamen}
-        </p>
-      </div>
 
-      {/* Dotted separator & Guardar Pregunta Button */}
-      <div className="pt-2 border-t border-dashed border-slate-300 flex items-center justify-start">
         {onSaveToggle && (
           <button
             type="button"
             onClick={onSaveToggle}
-            className={`py-2 px-4 rounded-xl border font-bold text-xs sm:text-sm flex items-center gap-2 transition-all cursor-pointer shadow-sm active:scale-95 ${
+            className={`py-1.5 px-3 rounded-xl border text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
               isSaved
-                ? 'bg-amber-100 text-amber-900 border-amber-400'
-                : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-300'
+                ? 'bg-amber-500/20 text-amber-300 border-amber-500/50 shadow-sm shadow-amber-500/20'
+                : 'bg-slate-800/80 hover:bg-slate-800 text-slate-300 border-slate-700 hover:text-white'
             }`}
           >
             {isSaved ? (
               <>
-                <BookmarkCheck className="w-4 h-4 text-amber-600" />
-                <span>⭐ Pregunta Guardada</span>
+                <BookmarkCheck className="w-3.5 h-3.5 text-amber-400" />
+                <span>Guardada</span>
               </>
             ) : (
               <>
-                <Bookmark className="w-4 h-4 text-slate-500" />
-                <span>⭐ Guardar pregunta</span>
+                <Bookmark className="w-3.5 h-3.5 text-slate-400" />
+                <span>Guardar</span>
               </>
             )}
           </button>
         )}
       </div>
+
+      {/* Concept Item Boxes */}
+      {items.length > 0 && (
+        <div className="space-y-2">
+          {items.map((item, idx) => (
+            <div
+              key={idx}
+              className={`p-3 rounded-xl border-l-4 border text-xs sm:text-sm leading-relaxed ${getItemClasses(item.color)}`}
+            >
+              <div className="font-black text-white text-xs mb-0.5 flex items-center gap-1.5">
+                <span>{item.concepte}</span>
+              </div>
+              <p className="text-slate-300 text-xs leading-relaxed font-medium">
+                {item.detall}
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Regla d'Examen Box */}
+      {reglaExamen && (
+        <div className="p-3 sm:p-3.5 rounded-xl bg-amber-950/25 border border-amber-500/30 text-xs leading-relaxed">
+          <div className="flex items-center gap-1.5 font-black text-amber-300 mb-1">
+            <Sparkles className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+            <span>Clau pel Tribunal d'Oposicions:</span>
+          </div>
+          <p className="text-slate-300 text-xs pl-5 border-l-2 border-amber-500/50 font-medium">
+            {reglaExamen}
+          </p>
+        </div>
+      )}
     </div>
   );
 };

@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { UserProfile } from '../types';
-import { getStoredLeaderboard } from '../firebase';
+import { getAllRegisteredUsers, getStoredLeaderboard } from '../firebase';
 import { ShieldRenderer } from './ShieldRenderer';
 import { Trophy, Medal, Crown, Sparkles, Award } from 'lucide-react';
 
@@ -9,7 +9,23 @@ interface RankingGlobalProps {
 }
 
 export const RankingGlobal: React.FC<RankingGlobalProps> = ({ currentUser }) => {
-  const leaderboard = getStoredLeaderboard();
+  const [leaderboard, setLeaderboard] = useState<UserProfile[]>(() => {
+    const cached = getStoredLeaderboard();
+    return cached.length > 0 ? cached : [currentUser];
+  });
+
+  useEffect(() => {
+    let isMounted = true;
+    getAllRegisteredUsers().then(users => {
+      if (isMounted) {
+        // Ensure current user is in the list
+        const exists = users.some(u => u.uid === currentUser.uid);
+        const fullList = exists ? users : [...users, currentUser];
+        setLeaderboard(fullList);
+      }
+    });
+    return () => { isMounted = false; };
+  }, [currentUser]);
   
   // Sort by XP descending
   const sorted = [...leaderboard].sort((a, b) => b.xp - a.xp);

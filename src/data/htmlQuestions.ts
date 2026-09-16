@@ -10,6 +10,9 @@ export interface DuelQuestionItem {
   options: { key: string; text: string; correct: boolean }[];
   explanation: string;
   hint: string;
+  guiaPagina?: string;
+  guiaTema?: string;
+  textLiteral?: string;
   isRealExam?: boolean;
 }
 
@@ -434,39 +437,98 @@ export const HTML_QUESTIONS_TOPICS: { [topicIndex: number]: DuelQuestionItem[] }
   ]
 };
 
-// Returns question for topicIndex (0 to 5)
+// Returns question for topicIndex (0 to 5) with exact page number & literal text from the Guia Oficial 2026
 export function getDuelQuestion(topicIndex: number): DuelQuestionItem {
-  // If topicIndex === -1 or 5 -> real exam question
   const actualIndex = topicIndex === -1 ? 5 : topicIndex;
-  const localList = HTML_QUESTIONS_TOPICS[actualIndex] || HTML_QUESTIONS_TOPICS[0];
+  const keys = ['A', 'B', 'C', 'D'];
 
-  // If topic is 5 (Preguntes Reals), also mix in questionsBank items tagged with REAL_EXAM_
-  if (actualIndex === 5) {
-    const realBankQuestions = QUESTIONS_BANK.filter(q => q.id.startsWith('REAL_EXAM_') || q.id.includes('OFICIAL'));
-    if (realBankQuestions.length > 0 && Math.random() < 0.4) {
-      const raw = realBankQuestions[Math.floor(Math.random() * realBankQuestions.length)];
-      const keys = ['A', 'B', 'C', 'D'];
-      return {
-        id: raw.id,
-        topicIndex: 5,
-        categoryName: "Preguntes Reals d'Examen Oficial",
-        categoryIcon: '📝',
-        question: raw.pregunta,
-        options: raw.opcions.map((optText, idx) => ({
-          key: keys[idx] || String(idx),
-          text: optText,
-          correct: idx === raw.resposta
-        })),
-        explanation: `${raw.explicacio} ${raw.guiaPagina ? `(${raw.guiaPagina})` : ''}`,
-        hint: "Analitza detingudament els requisits legals i descarta les alternatives que inclouen terminis o competències incongruents.",
-        isRealExam: true
-      };
+  // Map wheel topic to QUESTIONS_BANK categories
+  let filtered: Question[] = [];
+  let categoryName = "Àmbit A · Coneixements de l'Entorn";
+  let categoryIcon = '🏛️';
+
+  if (actualIndex === 0) {
+    filtered = QUESTIONS_BANK.filter(q => q.ambit === 'Àmbit A');
+    categoryName = "Àmbit A · Història i Entorn";
+    categoryIcon = '🏛️';
+  } else if (actualIndex === 1) {
+    filtered = QUESTIONS_BANK.filter(q => q.ambit === 'Àmbit B');
+    categoryName = "Àmbit B · Marc Institucional i Legal";
+    categoryIcon = '⚖️';
+  } else if (actualIndex === 2) {
+    filtered = QUESTIONS_BANK.filter(q => q.ambit === 'Àmbit C');
+    categoryName = "Àmbit C · Policia i Seguretat";
+    categoryIcon = '👮';
+  } else if (actualIndex === 3) {
+    filtered = QUESTIONS_BANK.filter(q => q.ambit === 'Àmbit D' || q.seccio?.includes('Actualitat') || q.ambit === 'Actualitat');
+    if (filtered.length === 0) {
+      filtered = QUESTIONS_BANK.filter(q => q.ambit === 'Àmbit A');
     }
-    const q = localList[Math.floor(Math.random() * localList.length)];
-    return q;
+    categoryName = "Actualitat i Societat";
+    categoryIcon = '📰';
+  } else if (actualIndex === 4) {
+    filtered = QUESTIONS_BANK.filter(q => 
+      q.seccio?.toLowerCase().includes('polic') || 
+      q.seccio?.toLowerCase().includes('ispc') || 
+      q.ambit === 'Àmbit C'
+    );
+    categoryName = "ISPC Repte Policial";
+    categoryIcon = '🎓';
+  } else {
+    // 5: Preguntes Reals d'Examen Oficial
+    filtered = QUESTIONS_BANK.filter(q => 
+      q.id.startsWith('REAL_EXAM_') || 
+      q.id.includes('OFICIAL') || 
+      Boolean(q.clauTribunal)
+    );
+    if (filtered.length === 0) {
+      filtered = QUESTIONS_BANK;
+    }
+    categoryName = "Pregunta Real d'Examen Oficial";
+    categoryIcon = '📝';
   }
 
-  // Pick random question from list
+  if (filtered.length > 0) {
+    const raw = filtered[Math.floor(Math.random() * filtered.length)];
+
+    // Extract exact page number from raw question or explanation regex
+    let pageRef = raw.guiaPagina || '';
+    if (!pageRef) {
+      const match = raw.explicacio.match(/\[Guia,?\s*(Pàg\.?\s*\d+)\]/i) || raw.explicacio.match(/(Pàg\.?\s*\d+)/i);
+      if (match) {
+        pageRef = match[1];
+      } else {
+        pageRef = `Guia Oficial Mossos 2026 • ${raw.seccio || raw.ambit}`;
+      }
+    }
+
+    return {
+      id: raw.id,
+      topicIndex: actualIndex,
+      categoryName: raw.seccio ? `${categoryName} (${raw.seccio})` : categoryName,
+      categoryIcon,
+      question: raw.pregunta,
+      options: raw.opcions.map((optText, idx) => ({
+        key: keys[idx] || String(idx),
+        text: optText,
+        correct: idx === raw.resposta
+      })),
+      explanation: raw.explicacio,
+      guiaPagina: pageRef,
+      guiaTema: raw.guiaTema || raw.seccio || raw.ambit,
+      textLiteral: raw.explicacio,
+      hint: '',
+      isRealExam: actualIndex === 5
+    };
+  }
+
+  // Fallback to local
+  const localList = HTML_QUESTIONS_TOPICS[actualIndex] || HTML_QUESTIONS_TOPICS[0];
   const q = localList[Math.floor(Math.random() * localList.length)];
-  return q;
+  return {
+    ...q,
+    guiaPagina: "Guia Oficial Mossos 2026",
+    guiaTema: q.categoryName,
+    textLiteral: q.explanation
+  };
 }

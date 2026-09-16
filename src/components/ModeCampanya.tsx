@@ -89,25 +89,25 @@ export const ModeCampanya: React.FC<ModeCampanyaProps> = ({
     let eventText = '';
 
     if (isCorrect) {
-      // Mecánica Oca: +1 casilla (+10 Mèrits, +20 XP)
+      // Mecànica Oca: +1 casella (+2 Mèrits, +20 XP)
       newTile = Math.min(TOTAL_TILES, currentTile + 1);
       let extraXp = 20;
-      let extraMerits = 10;
-      eventText = '✓ Resposta correcta! Avança +1 casella (+20 XP, +10 Mèrits).';
+      let extraMerits = 2;
+      eventText = '✓ Resposta correcta! Avança +1 casella (+20 XP, +2 Mèrits).';
 
       // Comprovar si cau a casella "De Mosso a Mosso" (+3 caselles)
       if (MOSSO_OCA_TILES.includes(newTile)) {
         newTile = Math.min(TOTAL_TILES, newTile + 3);
         extraXp += 30;
-        extraMerits += 15;
-        eventText += ' 🚨 DE MOSSO A MOSSO! Salta +3 caselles i suma bonificació!';
+        extraMerits += 5;
+        eventText += ' 🚨 DE MOSSO A MOSSO! Salta +3 caselles i suma bonificació (+5 Mèrits)!';
       }
 
       onUpdateUserStats(extraXp, extraMerits);
 
       if (newTile >= TOTAL_TILES) {
         setIsCompleted(true);
-        onUpdateUserStats(1000, 500); // Grand prize for completing board
+        onUpdateUserStats(500, 50); // Gran premi fita per completar tot el tauler (+50 Mèrits)
         confetti({
           particleCount: 120,
           spread: 80,

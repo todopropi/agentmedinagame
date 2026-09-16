@@ -43,31 +43,6 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({
 
   const optionLetters = ['A', 'B', 'C', 'D'];
 
-  // Construct fallback or custom Quadre per memoritzar if not defined on question
-  const reviewCardData = question.quadreMemoritzar || {
-    titol: question.seccio || 'Conceptes clau de la Guia d\'estudi',
-    items: [
-      {
-        concepte: `Opció Correcta: ${question.opcions[question.resposta]}`,
-        detall: question.explicacio,
-        color: 'blue' as const
-      },
-      ...(question.clauTribunal ? [{
-        concepte: 'Atenció al parany d\'examen',
-        detall: question.clauTribunal,
-        color: 'red' as const
-      }] : []),
-      ...(question.guiaTema ? [{
-        concepte: `Referència oficial (${question.guiaTema})`,
-        detall: `Pàgina oficial: ${question.guiaPagina || 'Guia d\'estudi 2026'}. Memoritzar els termes exactes.`,
-        color: 'green' as const
-      }] : [])
-    ],
-    reglaExamen: question.clauTribunal 
-      ? question.clauTribunal 
-      : `Revisa sempre que ${question.opcions[question.resposta]} coincideixi literalment amb la Guia Oficial.`
-  };
-
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 sm:p-7 shadow-xl">
       {/* Top Header: Ambit Badge, Guia Page & Bookmark */}
@@ -152,11 +127,11 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({
         })}
       </div>
 
-      {/* Rich Educational Feedback after Answering */}
+      {/* Educational Feedback after Answering */}
       {isAnswered && (
         <div className="animate-in fade-in slide-in-from-bottom-3 duration-300 space-y-4">
-          {/* Result Banner */}
-          <div className={`p-4 rounded-xl border flex items-start gap-3 ${
+          {/* Result & Official Explanation Banner */}
+          <div className={`p-4 sm:p-5 rounded-2xl border flex items-start gap-3.5 ${
             selectedIndex === question.resposta
               ? 'bg-emerald-950/40 border-emerald-500/50 text-emerald-200'
               : 'bg-red-950/40 border-red-500/50 text-red-200'
@@ -166,65 +141,48 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({
             ) : (
               <XCircle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
             )}
-            <div>
-              <div className="font-extrabold text-sm mb-1">
-                {selectedIndex === question.resposta ? 'Molt bé! Resposta correcta' : 'Resposta incorrecta'}
+            <div className="flex-1 space-y-1.5">
+              <div className="font-extrabold text-sm flex items-center justify-between gap-2 flex-wrap">
+                <span>{selectedIndex === question.resposta ? '✅ Resposta correcta!' : '❌ Resposta incorrecta'}</span>
+                {(question.guiaPagina || question.guiaTema) && (
+                  <span className="text-[11px] font-bold text-sky-400 bg-sky-950/80 px-2 py-0.5 rounded-lg border border-sky-800/60">
+                    {question.guiaTema || question.seccio} {question.guiaPagina ? `• ${question.guiaPagina}` : ''}
+                  </span>
+                )}
               </div>
-              <p className="text-xs opacity-90 leading-relaxed">
+              <p className="text-xs sm:text-sm text-slate-200 opacity-95 leading-relaxed pt-0.5">
                 {question.explicacio}
               </p>
             </div>
           </div>
 
-          {/* Official Guia Citation Box */}
-          <div className="p-3.5 bg-sky-950/30 border border-sky-800/40 rounded-xl text-xs text-sky-200/90">
-            <div className="font-bold flex items-center gap-1.5 text-sky-300 mb-1">
-              <BookOpen className="w-4 h-4 text-sky-400" />
-              <span>Citat de la Guia Oficial de Mossos 2026 ({question.guiaTema || question.seccio}, {question.guiaPagina || 'Temari'})</span>
-            </div>
-            <p className="italic text-slate-300 pl-5 border-l-2 border-sky-500/40 mt-1">
-              "{question.explicacio}"
-            </p>
-          </div>
-
-          {/* Quick Review Card matching screenshot (Quadre per memoritzar) */}
-          <ConceptReviewCard
-            titol={reviewCardData.titol}
-            items={reviewCardData.items}
-            reglaExamen={reviewCardData.reglaExamen}
-            isSaved={isSaved}
-            onSaveToggle={onSaveToggle ? () => onSaveToggle(question.id) : undefined}
-          />
-
-          {/* Tribunal Trap Alert if available */}
-          {question.clauTribunal && (
-            <div className="p-3.5 bg-amber-950/30 border border-amber-600/40 rounded-xl text-xs text-amber-200">
-              <div className="font-bold flex items-center gap-1.5 text-amber-300 mb-1">
-                <AlertTriangle className="w-4 h-4 text-amber-400" />
-                <span>⚠️ Clau de Test pel Tribunal d'Oposicions:</span>
-              </div>
-              <p className="text-slate-300 leading-relaxed">
-                {question.clauTribunal}
-              </p>
-            </div>
+          {/* Quadre de Síntesi / Clau de Tribunal (Only when custom data or tribunal rule exists, with no repetition) */}
+          {(question.quadreMemoritzar || question.clauTribunal) && (
+            <ConceptReviewCard
+              titol={question.quadreMemoritzar?.titol || question.seccio || 'Clau d\'Examen'}
+              items={question.quadreMemoritzar?.items}
+              reglaExamen={question.quadreMemoritzar?.reglaExamen || question.clauTribunal}
+              isSaved={isSaved}
+              onSaveToggle={onSaveToggle ? () => onSaveToggle(question.id) : undefined}
+            />
           )}
 
           {/* Anti-Confusion Flashcard if applicable */}
           {question.confusionAlert && (
-            <div className="p-3.5 bg-purple-950/30 border border-purple-600/40 rounded-xl text-xs text-purple-200">
-              <div className="font-bold flex items-center gap-1.5 text-purple-300 mb-1.5">
-                <Sparkles className="w-4 h-4 text-purple-400" />
+            <div className="p-3.5 sm:p-4 bg-purple-950/30 border border-purple-600/40 rounded-2xl text-xs text-purple-200 space-y-2">
+              <div className="font-bold flex items-center gap-1.5 text-purple-300">
+                <Sparkles className="w-4 h-4 text-purple-400 shrink-0" />
                 <span>Recorda la diferència clau (Anti-Confusió):</span>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] text-slate-300">
-                <div className="bg-slate-900/70 p-2.5 rounded-lg border border-purple-900/50">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-slate-300">
+                <div className="bg-slate-900/80 p-2.5 rounded-xl border border-purple-900/50">
                   <b className="text-purple-300 block mb-0.5">{question.confusionAlert.conceptA}</b>
                 </div>
-                <div className="bg-slate-900/70 p-2.5 rounded-lg border border-purple-900/50">
+                <div className="bg-slate-900/80 p-2.5 rounded-xl border border-purple-900/50">
                   <b className="text-purple-300 block mb-0.5">{question.confusionAlert.conceptB}</b>
                 </div>
               </div>
-              <p className="text-slate-300 mt-2 text-[11px]">
+              <p className="text-slate-300 text-xs leading-relaxed">
                 {question.confusionAlert.explanation}
               </p>
             </div>

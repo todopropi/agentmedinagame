@@ -43,16 +43,17 @@ export default function App() {
 
   // Initialize Firebase Auth Listener
   useEffect(() => {
+    // Failsafe timeout to prevent sticking on loading screen if network or auth is delayed
+    const timeoutId = setTimeout(() => {
+      setAuthChecked(true);
+    }, 1500);
+
     const unsubscribe = initAuthListener(async (user) => {
+      clearTimeout(timeoutId);
       if (user) {
-        const fullProfile = await loadUserProfile(user.uid);
-        if (fullProfile) {
-          // Re-calculate rank based on XP
-          fullProfile.rank = calculateRank(fullProfile.xp);
-          setCurrentUser(fullProfile);
-        } else {
-          setCurrentUser(user);
-        }
+        // user already has full profile loaded by initAuthListener
+        user.rank = calculateRank(user.xp);
+        setCurrentUser(user);
       } else {
         setCurrentUser(null);
       }
@@ -60,6 +61,7 @@ export default function App() {
     });
 
     return () => {
+      clearTimeout(timeoutId);
       if (typeof unsubscribe === 'function') unsubscribe();
     };
   }, []);
