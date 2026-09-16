@@ -188,6 +188,51 @@ export const HTML_QUESTIONS_TOPICS: { [topicIndex: number]: DuelQuestionItem[] }
       ],
       explanation: "L'article 5.1 de la LO 2/1986 recull l'adequació a l'ordenament jurídic, incloent l'actuació amb neutralitat política i imparcialitat.",
       hint: "Correspon al primer bloc dogmàtic dels principis de l'article 5 de la Llei Orgànica 2/1986."
+    },
+    {
+      id: 'q_c_4',
+      topicIndex: 2,
+      categoryName: 'Àmbit C · Seguretat i Policia',
+      categoryIcon: '👮',
+      question: "Segons l'article 72 de la Llei 10/1994, en quin termini prescriuen les faltes molt greus dels membres dels Mossos d'Esquadra?",
+      options: [
+        { key: "A", text: "Als 2 anys.", correct: false },
+        { key: "B", text: "Als 3 anys.", correct: true },
+        { key: "C", text: "Als 5 anys.", correct: false },
+        { key: "D", text: "A l'any.", correct: false }
+      ],
+      explanation: "Les faltes molt greus prescriuen als 3 anys, les greus als 2 anys i les lleus al mes.",
+      hint: "Recorda el nostre mnemotècnic de prescripció: 3 anys / 2 anys / 1 mes."
+    },
+    {
+      id: 'q_c_5',
+      topicIndex: 2,
+      categoryName: 'Àmbit C · Seguretat i Policia',
+      categoryIcon: '👮',
+      question: "D'acord amb la LECrim, quin és el topall màxim general de durada de la detenció preventiva sense autorització judicial?",
+      options: [
+        { key: "A", text: "24 hores.", correct: false },
+        { key: "B", text: "48 hores.", correct: false },
+        { key: "C", text: "72 hores.", correct: true },
+        { key: "D", text: "96 hores.", correct: false }
+      ],
+      explanation: "L'article 17.2 de la Constitució i la LECrim fixen que la detenció preventiva no durarà més del temps estrictament necessari, amb un màxim de 72 hores.",
+      hint: "Topall ordinari constitucional i processal abans de passar a disposició del jutge."
+    },
+    {
+      id: 'q_c_6',
+      topicIndex: 2,
+      categoryName: 'Àmbit C · Seguretat i Policia',
+      categoryIcon: '👮',
+      question: "Quin procediment judicial ràpid permet a una persona privada de llibertat sol·licitar que un jutge determini la legalitat de la seva detenció?",
+      options: [
+        { key: "A", text: "El recurs d'empara.", correct: false },
+        { key: "B", text: "L'Habeas Corpus (LO 6/1984).", correct: true },
+        { key: "C", text: "El judici ràpid per delictes lleus.", correct: false },
+        { key: "D", text: "El sumari ordinari.", correct: false }
+      ],
+      explanation: "L'Habeas Corpus és el procediment constitucional que resol el Jutge d'Instrucció en un màxim de 24 hores.",
+      hint: "Institució d'origen anglosaxó recollida a l'article 17.4 CE i desenvolupada per la LO 6/1984."
     }
   ],
 
@@ -237,6 +282,36 @@ export const HTML_QUESTIONS_TOPICS: { [topicIndex: number]: DuelQuestionItem[] }
       ],
       explanation: "La Junta de Seguretat va acordar ampliar el sostre màxim d'agents de 18.267 a 22.006 efectius de cara a l'horitzó 2030.",
       hint: "L'ampliació superava per primera vegada la barrera dels 20.000 efectius policials per adaptar-se al creixement demogràfic."
+    },
+    {
+      id: 'q_act_4',
+      topicIndex: 3,
+      categoryName: 'Actualitat & Cultura Policial',
+      categoryIcon: '📰',
+      question: "Quin element sanitari d'emergència ha de portar obligatòriament el vehicle policial dels Mossos que compta amb un dispositiu conductor d'energia (Tàser)?",
+      options: [
+        { key: "A", text: "Un desfibril·lador extern automàtic (DEA).", correct: true },
+        { key: "B", text: "Una farmaciola d'oxigenoteràpia.", correct: false },
+        { key: "C", text: "Un kit de sutura quirúrgica.", correct: false },
+        { key: "D", text: "Un collarí cervical rígid.", correct: false }
+      ],
+      explanation: "La instrucció policial exigeix portar un DEA al vehicle i activar la càmera unipersonal abans o durant l'ús del DCE.",
+      hint: "Dispositiu mèdic d'atenció cardíaca immediata davant una aturada."
+    },
+    {
+      id: 'q_act_5',
+      topicIndex: 3,
+      categoryName: 'Actualitat & Cultura Policial',
+      categoryIcon: '📰',
+      question: "Quin dia institucional se celebra la festivitat del 'Dia de les Esquadres' en honor al cos de Mossos d'Esquadra?",
+      options: [
+        { key: "A", text: "21 d'abril.", correct: false },
+        { key: "B", text: "22 d'abril.", correct: true },
+        { key: "C", text: "23 d'abril.", correct: false },
+        { key: "D", text: "11 de setembre.", correct: false }
+      ],
+      explanation: "El Decret 64/2005 fixa el 22 d'abril com a data oficial commemorativa de les Esquadres.",
+      hint: "És la vigília de la diada de Sant Jordi."
     }
   ],
 

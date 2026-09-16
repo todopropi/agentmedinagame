@@ -17,9 +17,7 @@ import {
   ChevronRight,
   User as UserIcon,
   Volume2,
-  VolumeX,
-  Users,
-  Radio
+  VolumeX
 } from 'lucide-react';
 import { STORE_UNITS_LIST } from '../data/badges';
 
@@ -31,8 +29,7 @@ interface NavbarProps {
   onTabChange: (tab: ActiveTab) => void;
   onLogout: () => void;
   pendingDuelCount?: number;
-  onOpenActiveUsers?: () => void;
-  activeUsersCount?: number;
+  onOpenAdminPanel?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({ 
@@ -41,8 +38,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onTabChange, 
   onLogout,
   pendingDuelCount = 0,
-  onOpenActiveUsers,
-  activeUsersCount = 3
+  onOpenAdminPanel
 }) => {
   const [isRanksOpen, setIsRanksOpen] = useState(false);
   const [isMuted, setIsMuted] = useState(AudioEngine.muted);
@@ -58,55 +54,37 @@ export const Navbar: React.FC<NavbarProps> = ({
   return (
     <>
       <header className="sticky top-0 z-40 bg-slate-950/95 backdrop-blur-md border-b border-slate-800/90 shadow-xl">
-        {/* Top Bar: Brand, Stats, Online & Profile */}
-        <div className="max-w-7xl mx-auto px-2.5 sm:px-6 py-2 flex items-center justify-between gap-2 sm:gap-4">
+        {/* Top Bar: Brand, Stats & Profile */}
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 py-2 flex items-center justify-between gap-2 sm:gap-4">
           {/* Left: Official Emblem and App Title */}
           <div 
             onClick={() => {
               AudioEngine.playClick();
               onTabChange('campanya');
             }}
-            className="flex items-center gap-1.5 sm:gap-3 cursor-pointer group select-none shrink-0"
+            className="flex items-center gap-2 sm:gap-3 cursor-pointer group select-none shrink-0"
           >
-            <OfficialEmblem size={38} glow={false} />
+            <OfficialEmblem size={42} glow={false} />
             <div>
               <div className="flex items-center gap-1.5">
-                <span className="text-sm sm:text-lg font-black tracking-tight text-white group-hover:text-amber-400 transition-colors">
+                <span className="text-base sm:text-lg font-black tracking-tight text-white group-hover:text-amber-400 transition-colors">
                   AGENT MEDINA
                 </span>
-                <span className="text-[8px] sm:text-[9px] font-extrabold px-1 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30 uppercase tracking-widest hidden xs:inline-block">
-                  CME
+                <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30 uppercase tracking-widest hidden xs:inline-block">
+                  OPOSICIÓ CME
                 </span>
               </div>
-              <div className="text-[9px] sm:text-[11px] text-slate-400 font-medium flex items-center gap-1">
+              <div className="text-[10px] sm:text-[11px] text-slate-400 font-medium flex items-center gap-1">
                 <span className="hidden sm:inline">Escut:</span>
-                <span className="font-semibold text-sky-400 truncate max-w-[85px] sm:max-w-none">
+                <span className="font-semibold text-sky-400 truncate max-w-[110px] sm:max-w-none">
                   {equippedShield.name}
                 </span>
               </div>
             </div>
           </div>
 
-          {/* Right: Scale & Rank, Merits, Active Users, Audio & Avatar */}
-          <div className="flex items-center gap-1 sm:gap-2.5">
-            {/* Active Users / Online Indicator Button */}
-            <button
-              type="button"
-              onClick={() => {
-                AudioEngine.playClick();
-                onOpenActiveUsers?.();
-              }}
-              title="Veure opositors actius en línia i cercar companys per correu o nom"
-              className="flex items-center gap-1 sm:gap-1.5 px-2 py-1 sm:py-1.5 bg-emerald-950/50 hover:bg-emerald-900/60 border border-emerald-500/40 rounded-xl cursor-pointer text-emerald-300 transition-all text-xs font-black shadow-sm group"
-            >
-              <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
-              </span>
-              <span className="hidden xs:inline">{activeUsersCount} Actius</span>
-              <Users className="w-3.5 h-3.5 text-emerald-400 group-hover:scale-110 transition-transform" />
-            </button>
-
+          {/* Right: Scale & Rank, Merits, XP Bar, Audio & Avatar */}
+          <div className="flex items-center gap-1.5 sm:gap-3">
             {/* Police Rank & Scale Button */}
             <button 
               type="button"
@@ -115,10 +93,10 @@ export const Navbar: React.FC<NavbarProps> = ({
                 setIsRanksOpen(true);
               }}
               title="Escala i rang policial - Fes clic per veure tots els rangs"
-              className="flex items-center gap-1 sm:gap-1.5 px-1.5 sm:px-2.5 py-1 bg-slate-900 border border-slate-700/80 rounded-xl cursor-pointer hover:border-amber-500/50 hover:bg-slate-800 transition-all text-left"
+              className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1 bg-slate-900 border border-slate-700/80 rounded-xl cursor-pointer hover:border-amber-500/50 hover:bg-slate-800 transition-all text-left"
             >
-              <span className="text-base leading-none">{user.rank.badgeIcon || '👮‍♂️'}</span>
-              <div className="hidden md:block">
+              <span className="text-base sm:text-lg leading-none">{user.rank.badgeIcon || '👮‍♂️'}</span>
+              <div className="hidden sm:block">
                 <div className="text-[9px] text-slate-400 font-bold uppercase tracking-wider leading-none">
                   {user.rank.categoryName}
                 </div>
@@ -141,6 +119,9 @@ export const Navbar: React.FC<NavbarProps> = ({
               <span className="text-xs sm:text-sm font-black text-amber-300">
                 {user.merits.toLocaleString()}
               </span>
+              <span className="text-[9px] text-amber-400 font-bold uppercase hidden md:inline">
+                Mèrits
+              </span>
             </div>
 
             {/* XP & Rank Bar (Desktop) */}
@@ -149,14 +130,14 @@ export const Navbar: React.FC<NavbarProps> = ({
                 AudioEngine.playClick();
                 setIsRanksOpen(true);
               }}
-              className="hidden lg:flex flex-col items-end min-w-[120px] cursor-pointer hover:opacity-90"
+              className="hidden lg:flex flex-col items-end min-w-[130px] cursor-pointer hover:opacity-90"
             >
               <div className="flex items-center gap-1.5 text-xs text-slate-300 font-bold">
                 <Sparkles className="w-3 h-3 text-sky-400" />
                 <span>{user.xp.toLocaleString()} XP</span>
                 {nextRank && (
                   <span className="text-[10px] text-slate-500 font-normal">
-                    ({xpNeeded})
+                    ({xpNeeded} per {nextRank.name.split('/')[0]})
                   </span>
                 )}
               </div>
@@ -167,6 +148,22 @@ export const Navbar: React.FC<NavbarProps> = ({
                 />
               </div>
             </div>
+
+            {/* Admin Panel Button if admin */}
+            {(user.isAdmin || user.email?.toLowerCase().trim() === 'opossscar@gmail.com') && onOpenAdminPanel && (
+              <button
+                type="button"
+                onClick={() => {
+                  AudioEngine.playClick();
+                  onOpenAdminPanel();
+                }}
+                title="Panell d'Administrador - Gestió de preguntes"
+                className="px-2 sm:px-2.5 py-1 bg-rose-500/20 hover:bg-rose-500/30 text-rose-400 border border-rose-500/40 rounded-xl text-xs font-black flex items-center gap-1 transition-all cursor-pointer shadow-sm shadow-rose-500/20"
+              >
+                <ShieldAlert className="w-3.5 h-3.5 text-rose-400" />
+                <span className="hidden sm:inline">ADMIN</span>
+              </button>
+            )}
 
             {/* Audio Toggle */}
             <button
@@ -187,19 +184,19 @@ export const Navbar: React.FC<NavbarProps> = ({
               title={`Escut equipat: ${equippedShield.name} - Clic per anar a la tenda`}
               className="cursor-pointer transition-transform hover:scale-110 shrink-0"
             >
-              <ShieldRenderer shieldId={user.equippedShieldId} size={32} glow={true} />
+              <ShieldRenderer shieldId={user.equippedShieldId} size={34} glow={true} />
             </div>
 
             {/* User Avatar & Logout */}
-            <div className="flex items-center gap-1 pl-1 sm:pl-2 border-l border-slate-800">
+            <div className="flex items-center gap-1 sm:gap-1.5 pl-1 sm:pl-2 border-l border-slate-800">
               {user.photoURL ? (
                 <img 
                   src={user.photoURL} 
                   alt={user.displayName} 
-                  className="w-7 h-7 rounded-full border border-slate-700 object-cover"
+                  className="w-7 h-7 sm:w-8 sm:h-8 rounded-full border border-slate-700 object-cover"
                 />
               ) : (
-                <div className="w-7 h-7 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-300 text-xs">
+                <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-300 text-xs">
                   <UserIcon className="w-3.5 h-3.5" />
                 </div>
               )}
@@ -218,15 +215,15 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
         </div>
 
-        {/* Desktop Navigation Tabs Bar (Visible on sm+ screens, completely eliminated on mobile to prevent white scrollbars) */}
-        <nav className="hidden sm:block border-t border-slate-800/80 bg-slate-900/80 no-scrollbar">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 flex items-center gap-1 sm:gap-2">
+        {/* Navigation Tabs Bar */}
+        <nav className="border-t border-slate-800/80 bg-slate-900/80 overflow-x-auto no-scrollbar">
+          <div className="max-w-7xl mx-auto px-2 sm:px-6 flex items-center gap-1 sm:gap-2">
             <button
               onClick={() => {
                 AudioEngine.playClick();
                 onTabChange('campanya');
               }}
-              className={`flex items-center gap-2 py-2.5 px-4 border-b-2 font-black text-xs sm:text-sm tracking-wide transition-colors whitespace-nowrap cursor-pointer ${
+              className={`flex items-center gap-1.5 sm:gap-2 py-2.5 sm:py-3 px-3 sm:px-4 border-b-2 font-black text-xs sm:text-sm tracking-wide transition-colors whitespace-nowrap cursor-pointer ${
                 activeTab === 'campanya'
                   ? 'border-amber-500 text-amber-400 bg-amber-500/10'
                   : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-800/40'
@@ -241,7 +238,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 AudioEngine.playClick();
                 onTabChange('duels');
               }}
-              className={`flex items-center gap-2 py-2.5 px-4 border-b-2 font-black text-xs sm:text-sm tracking-wide transition-colors whitespace-nowrap cursor-pointer ${
+              className={`flex items-center gap-1.5 sm:gap-2 py-2.5 sm:py-3 px-3 sm:px-4 border-b-2 font-black text-xs sm:text-sm tracking-wide transition-colors whitespace-nowrap cursor-pointer ${
                 activeTab === 'duels'
                   ? 'border-sky-500 text-sky-400 bg-sky-500/10'
                   : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-800/40'
@@ -261,7 +258,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 AudioEngine.playClick();
                 onTabChange('tienda');
               }}
-              className={`flex items-center gap-2 py-2.5 px-4 border-b-2 font-black text-xs sm:text-sm tracking-wide transition-colors whitespace-nowrap cursor-pointer ${
+              className={`flex items-center gap-1.5 sm:gap-2 py-2.5 sm:py-3 px-3 sm:px-4 border-b-2 font-black text-xs sm:text-sm tracking-wide transition-colors whitespace-nowrap cursor-pointer ${
                 activeTab === 'tienda'
                   ? 'border-yellow-500 text-yellow-400 bg-yellow-500/10'
                   : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-800/40'
@@ -276,7 +273,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 AudioEngine.playClick();
                 onTabChange('repas');
               }}
-              className={`flex items-center gap-2 py-2.5 px-4 border-b-2 font-black text-xs sm:text-sm tracking-wide transition-colors whitespace-nowrap cursor-pointer ${
+              className={`flex items-center gap-1.5 sm:gap-2 py-2.5 sm:py-3 px-3 sm:px-4 border-b-2 font-black text-xs sm:text-sm tracking-wide transition-colors whitespace-nowrap cursor-pointer ${
                 activeTab === 'repas'
                   ? 'border-emerald-500 text-emerald-400 bg-emerald-500/10'
                   : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-800/40'
@@ -296,7 +293,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 AudioEngine.playClick();
                 onTabChange('ranking');
               }}
-              className={`flex items-center gap-2 py-2.5 px-4 border-b-2 font-black text-xs sm:text-sm tracking-wide transition-colors whitespace-nowrap cursor-pointer ${
+              className={`flex items-center gap-1.5 sm:gap-2 py-2.5 sm:py-3 px-3 sm:px-4 border-b-2 font-black text-xs sm:text-sm tracking-wide transition-colors whitespace-nowrap cursor-pointer ${
                 activeTab === 'ranking'
                   ? 'border-purple-500 text-purple-400 bg-purple-500/10'
                   : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-800/40'
@@ -309,98 +306,6 @@ export const Navbar: React.FC<NavbarProps> = ({
         </nav>
       </header>
 
-      {/* Mobile Fixed Bottom Navigation Bar (Thumb-accessible, ergonomic, zero white scrollbars) */}
-      <nav className="sm:hidden fixed bottom-0 left-0 right-0 z-40 bg-slate-950/95 backdrop-blur-lg border-t border-slate-800/90 shadow-2xl px-1.5 py-1 flex items-center justify-around select-none">
-        <button
-          onClick={() => {
-            AudioEngine.playClick();
-            onTabChange('campanya');
-          }}
-          className={`flex-1 py-1.5 px-1 flex flex-col items-center justify-center rounded-xl transition-all cursor-pointer min-h-[48px] ${
-            activeTab === 'campanya'
-              ? 'text-amber-400 font-black bg-amber-500/10'
-              : 'text-slate-400 hover:text-slate-200'
-          }`}
-        >
-          <Dice5 className="w-5 h-5 mb-0.5" />
-          <span className="text-[10px] tracking-tight">Oca 50</span>
-        </button>
-
-        <button
-          onClick={() => {
-            AudioEngine.playClick();
-            onTabChange('duels');
-          }}
-          className={`flex-1 py-1.5 px-1 flex flex-col items-center justify-center rounded-xl transition-all cursor-pointer relative min-h-[48px] ${
-            activeTab === 'duels'
-              ? 'text-sky-400 font-black bg-sky-500/10'
-              : 'text-slate-400 hover:text-slate-200'
-          }`}
-        >
-          <div className="relative">
-            <Swords className="w-5 h-5 mb-0.5" />
-            {pendingDuelCount > 0 && (
-              <span className="absolute -top-1 -right-2 text-[9px] font-black px-1 rounded-full bg-sky-500 text-slate-950 animate-pulse">
-                {pendingDuelCount}
-              </span>
-            )}
-          </div>
-          <span className="text-[10px] tracking-tight">Duels 1v1</span>
-        </button>
-
-        <button
-          onClick={() => {
-            AudioEngine.playClick();
-            onTabChange('tienda');
-          }}
-          className={`flex-1 py-1.5 px-1 flex flex-col items-center justify-center rounded-xl transition-all cursor-pointer min-h-[48px] ${
-            activeTab === 'tienda'
-              ? 'text-yellow-400 font-black bg-yellow-500/10'
-              : 'text-slate-400 hover:text-slate-200'
-          }`}
-        >
-          <ShieldAlert className="w-5 h-5 mb-0.5" />
-          <span className="text-[10px] tracking-tight">Tenda</span>
-        </button>
-
-        <button
-          onClick={() => {
-            AudioEngine.playClick();
-            onTabChange('repas');
-          }}
-          className={`flex-1 py-1.5 px-1 flex flex-col items-center justify-center rounded-xl transition-all cursor-pointer relative min-h-[48px] ${
-            activeTab === 'repas'
-              ? 'text-emerald-400 font-black bg-emerald-500/10'
-              : 'text-slate-400 hover:text-slate-200'
-          }`}
-        >
-          <div className="relative">
-            <BookOpen className="w-5 h-5 mb-0.5" />
-            {user.failedQuestionIds?.length > 0 && (
-              <span className="absolute -top-1 -right-2 text-[9px] font-black px-1 rounded-full bg-red-500 text-white">
-                {user.failedQuestionIds.length}
-              </span>
-            )}
-          </div>
-          <span className="text-[10px] tracking-tight">Repàs</span>
-        </button>
-
-        <button
-          onClick={() => {
-            AudioEngine.playClick();
-            onTabChange('ranking');
-          }}
-          className={`flex-1 py-1.5 px-1 flex flex-col items-center justify-center rounded-xl transition-all cursor-pointer min-h-[48px] ${
-            activeTab === 'ranking'
-              ? 'text-purple-400 font-black bg-purple-500/10'
-              : 'text-slate-400 hover:text-slate-200'
-          }`}
-        >
-          <Trophy className="w-5 h-5 mb-0.5" />
-          <span className="text-[10px] tracking-tight">Rànquing</span>
-        </button>
-      </nav>
-
       {/* Official Police Ranks Modal */}
       <RanksModal 
         isOpen={isRanksOpen}
@@ -410,4 +315,3 @@ export const Navbar: React.FC<NavbarProps> = ({
     </>
   );
 };
-

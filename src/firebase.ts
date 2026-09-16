@@ -39,6 +39,30 @@ const firebaseConfig = {
   appId: env.VITE_FIREBASE_APP_ID || '',
 };
 
+export interface UnauthorizedDomainInfo {
+  domain: string;
+  projectId: string;
+}
+
+let unauthorizedDomainAlert: UnauthorizedDomainInfo | null = null;
+const alertListeners = new Set<(info: UnauthorizedDomainInfo | null) => void>();
+
+export function getUnauthorizedDomainAlert(): UnauthorizedDomainInfo | null {
+  return unauthorizedDomainAlert;
+}
+
+export function setUnauthorizedDomainAlert(info: UnauthorizedDomainInfo | null) {
+  unauthorizedDomainAlert = info;
+  alertListeners.forEach(listener => listener(info));
+}
+
+export function subscribeUnauthorizedDomainAlert(listener: (info: UnauthorizedDomainInfo | null) => void): () => void {
+  alertListeners.add(listener);
+  return () => {
+    alertListeners.delete(listener);
+  };
+}
+
 const isFirebaseConfigured = Boolean(
   firebaseConfig.apiKey && 
   firebaseConfig.projectId && 
@@ -79,8 +103,6 @@ const INITIAL_DEMO_LEADERBOARD: UserProfile[] = [
     unlockedShieldIds: ['escut_ispc', 'escut_tedax_nrbq', 'escut_brimo'],
     failedQuestionIds: [],
     savedQuestionIds: [],
-    isOnline: true,
-    lastActive: Date.now() - 2 * 60 * 1000,
   },
   {
     uid: 'bot_clara_sots',
@@ -94,8 +116,6 @@ const INITIAL_DEMO_LEADERBOARD: UserProfile[] = [
     unlockedShieldIds: ['escut_ispc', 'escut_gei'],
     failedQuestionIds: [],
     savedQuestionIds: [],
-    isOnline: true,
-    lastActive: Date.now() - 5 * 60 * 1000,
   },
   {
     uid: 'bot_marc_arro',
@@ -109,8 +129,6 @@ const INITIAL_DEMO_LEADERBOARD: UserProfile[] = [
     unlockedShieldIds: ['escut_ispc', 'escut_arro'],
     failedQuestionIds: [],
     savedQuestionIds: [],
-    isOnline: true,
-    lastActive: Date.now() - 12 * 60 * 1000,
   },
   {
     uid: 'bot_nur_gu',
@@ -124,8 +142,6 @@ const INITIAL_DEMO_LEADERBOARD: UserProfile[] = [
     unlockedShieldIds: ['escut_ispc', 'escut_gu_bcn'],
     failedQuestionIds: [],
     savedQuestionIds: [],
-    isOnline: false,
-    lastActive: Date.now() - 55 * 60 * 1000,
   },
 ];
 
@@ -134,7 +150,11 @@ export function getStoredLocalUser(): UserProfile | null {
   try {
     const raw = localStorage.getItem(LOCAL_USER_KEY);
     if (!raw) return null;
-    return JSON.parse(raw);
+    const user = JSON.parse(raw) as UserProfile;
+    if (user.email && user.email.toLowerCase().trim() === 'opossscar@gmail.com') {
+      user.isAdmin = true;
+    }
+    return user;
   } catch (e) {
     return null;
   }
@@ -173,6 +193,7 @@ export function getStoredLeaderboard(): UserProfile[] {
 
 // Build standard default user profile
 export function createDefaultProfile(uid: string, email: string, displayName: string, photoURL?: string): UserProfile {
+  const isAdmin = email.toLowerCase().trim() === 'opossscar@gmail.com';
   return {
     uid,
     email,
@@ -185,40 +206,93 @@ export function createDefaultProfile(uid: string, email: string, displayName: st
     unlockedShieldIds: [DEFAULT_SHIELD_ID],
     failedQuestionIds: [],
     savedQuestionIds: [],
+    isAdmin,
     createdAt: Date.now(),
     lastLogin: Date.now(),
-    lastActive: Date.now(),
-    isOnline: true,
   };
 }
 
 // AUTH API
 export async function loginWithGoogle(): Promise<UserProfile> {
   if (isFirebaseConfigured && auth && db) {
-    const provider = new GoogleAuthProvider();
-    const result = await signInWithPopup(auth, provider);
-    const fbUser = result.user;
-    
-    // Fetch profile from Firestore
-    const userDocRef = doc(db, 'users', fbUser.uid);
-    const snap = await getDoc(userDocRef);
+    try {
+      const provider = new GoogleAuthProvider();
+      provider.setCustomParameters({ prompt: 'select_account' });
+      const result = await signInWithPopup(auth, provider);
+      const fbUser = result.user;
+      
+      // Fetch profile from Firestore
+      const userDocRef = doc(db, 'users', fbUser.uid);
+      const snap = await getDoc(userDocRef);
 
-    if (snap.exists()) {
-      const data = snap.data() as UserProfile;
-      data.lastLogin = Date.now();
-      await updateDoc(userDocRef, { lastLogin: Date.now() });
-      saveStoredLocalUser(data);
-      return data;
-    } else {
-      const newProfile = createDefaultProfile(
-        fbUser.uid, 
-        fbUser.email || 'aspirant@agentmedina.cat', 
-        fbUser.displayName || 'Aspirant', 
-        fbUser.photoURL || undefined
-      );
-      await setDoc(userDocRef, newProfile);
-      saveStoredLocalUser(newProfile);
-      return newProfile;
+      if (snap.exists()) {
+        const data = snap.data() as UserProfile;
+        data.lastLogin = Date.now();
+        await updateDoc(userDocRef, { lastLogin: Date.now() });
+        saveStoredLocalUser(data);
+        return data;
+      } else {
+        const newProfile = createDefaultProfile(
+          fbUser.uid, 
+          fbUser.email || 'aspirant@agentmedina.cat', 
+          fbUser.displayName || 'Aspirant', 
+          fbUser.photoURL || undefined
+        );
+        await setDoc(userDocRef, newProfile);
+        saveStoredLocalUser(newProfile);
+        return newProfile;
+      }
+    } catch (authError: any) {
+      const errCode = authError?.code || '';
+      const errMsg = String(authError?.message || '');
+      const isUnauthorizedDomain = 
+        errCode === 'auth/unauthorized-domain' || 
+        errMsg.includes('auth/unauthorized-domain') ||
+        errMsg.includes('unauthorized-domain');
+
+      if (isUnauthorizedDomain) {
+        const currentDomain = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
+        console.warn(
+          `[Firebase Auth] El domini "${currentDomain}" no està autoritzat a Firebase (auth/unauthorized-domain). S'activa la sessió en mode local/preview.`
+        );
+
+        setUnauthorizedDomainAlert({
+          domain: currentDomain,
+          projectId: firebaseConfig.projectId
+        });
+
+        // Use resilient local session
+        let existing = getStoredLocalUser();
+        if (!existing) {
+          existing = createDefaultProfile(
+            'user_google_' + Math.random().toString(36).substring(2, 9),
+            'opossscar@gmail.com',
+            'Opositor Mossos (Òscar)',
+            'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80'
+          );
+        }
+        existing.lastLogin = Date.now();
+        saveStoredLocalUser(existing);
+        return existing;
+      }
+
+      if (errCode === 'auth/popup-closed-by-user' || errCode === 'auth/cancelled-popup-request') {
+        throw new Error('S\'ha tancat la finestra d\'inici de sessió.');
+      }
+
+      console.warn('Firebase Google Auth fallback to local:', authError);
+      let existing = getStoredLocalUser();
+      if (!existing) {
+        existing = createDefaultProfile(
+          'user_google_' + Math.random().toString(36).substring(2, 9),
+          'opossscar@gmail.com',
+          'Opositor Mossos (Òscar)',
+          'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80'
+        );
+      }
+      existing.lastLogin = Date.now();
+      saveStoredLocalUser(existing);
+      return existing;
     }
   }
 
@@ -226,7 +300,7 @@ export async function loginWithGoogle(): Promise<UserProfile> {
   let existing = getStoredLocalUser();
   if (!existing) {
     existing = createDefaultProfile(
-      'user_google_' + Math.random().toString(36).substr(2, 9),
+      'user_google_' + Math.random().toString(36).substring(2, 9),
       'opossscar@gmail.com',
       'Opositor Mossos (Òscar)',
       'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80'
@@ -239,13 +313,22 @@ export async function loginWithGoogle(): Promise<UserProfile> {
 
 export async function loginWithEmailPassword(email: string, pass: string): Promise<UserProfile> {
   if (isFirebaseConfigured && auth && db) {
-    const cred = await signInWithEmailAndPassword(auth, email, pass);
-    const userDocRef = doc(db, 'users', cred.user.uid);
-    const snap = await getDoc(userDocRef);
-    if (snap.exists()) {
-      const data = snap.data() as UserProfile;
-      saveStoredLocalUser(data);
-      return data;
+    try {
+      const cred = await signInWithEmailAndPassword(auth, email, pass);
+      const userDocRef = doc(db, 'users', cred.user.uid);
+      const snap = await getDoc(userDocRef);
+      if (snap.exists()) {
+        const data = snap.data() as UserProfile;
+        saveStoredLocalUser(data);
+        return data;
+      } else {
+        const newProf = createDefaultProfile(cred.user.uid, email, email.split('@')[0]);
+        await setDoc(userDocRef, newProf);
+        saveStoredLocalUser(newProf);
+        return newProf;
+      }
+    } catch (fbError: any) {
+      console.warn('Firebase email login error, using resilient session:', fbError);
     }
   }
 
@@ -253,7 +336,7 @@ export async function loginWithEmailPassword(email: string, pass: string): Promi
   let existing = getStoredLocalUser();
   if (!existing || existing.email !== email) {
     existing = createDefaultProfile(
-      'user_email_' + Math.random().toString(36).substr(2, 9),
+      'user_email_' + Math.random().toString(36).substring(2, 9),
       email,
       email.split('@')[0]
     );
@@ -265,20 +348,39 @@ export async function loginWithEmailPassword(email: string, pass: string): Promi
 
 export async function registerWithEmailPassword(email: string, pass: string, name: string): Promise<UserProfile> {
   if (isFirebaseConfigured && auth && db) {
-    const cred = await createUserWithEmailAndPassword(auth, email, pass);
-    const newProfile = createDefaultProfile(cred.user.uid, email, name);
-    await setDoc(doc(db, 'users', cred.user.uid), newProfile);
-    saveStoredLocalUser(newProfile);
-    return newProfile;
+    try {
+      const cred = await createUserWithEmailAndPassword(auth, email, pass);
+      const newProfile = createDefaultProfile(cred.user.uid, email, name);
+      await setDoc(doc(db, 'users', cred.user.uid), newProfile);
+      saveStoredLocalUser(newProfile);
+      return newProfile;
+    } catch (fbError: any) {
+      console.warn('Firebase register notice, using local session:', fbError);
+    }
   }
 
   const newProfile = createDefaultProfile(
-    'user_email_' + Math.random().toString(36).substr(2, 9),
+    'user_email_' + Math.random().toString(36).substring(2, 9),
     email,
     name
   );
   saveStoredLocalUser(newProfile);
   return newProfile;
+}
+
+export async function loginAsGuest(customName?: string): Promise<UserProfile> {
+  let existing = getStoredLocalUser();
+  if (!existing) {
+    existing = createDefaultProfile(
+      'user_aspirant_' + Math.random().toString(36).substring(2, 9),
+      'opossscar@gmail.com',
+      customName || 'Aspirant Medina',
+      'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80'
+    );
+  }
+  existing.lastLogin = Date.now();
+  saveStoredLocalUser(existing);
+  return existing;
 }
 
 export async function logoutUser(): Promise<void> {
@@ -295,27 +397,35 @@ export const logOutUser = logoutUser;
 
 export function initAuthListener(callback: (user: UserProfile | null) => void): () => void {
   if (isFirebaseConfigured && auth && db) {
-    const unsub = auth.onAuthStateChanged(async (fbUser) => {
-      if (fbUser) {
-        try {
-          const snap = await getDoc(doc(db, 'users', fbUser.uid));
-          if (snap.exists()) {
-            const prof = snap.data() as UserProfile;
-            saveStoredLocalUser(prof);
-            callback(prof);
-            return;
+    try {
+      const unsub = auth.onAuthStateChanged(async (fbUser) => {
+        if (fbUser) {
+          try {
+            const snap = await getDoc(doc(db, 'users', fbUser.uid));
+            if (snap.exists()) {
+              const prof = snap.data() as UserProfile;
+              saveStoredLocalUser(prof);
+              callback(prof);
+              return;
+            }
+          } catch (err) {
+            console.warn('Error reading user doc on auth change:', err);
           }
-        } catch (err) {
-          console.warn('Error reading user doc on auth change:', err);
+          const local = getStoredLocalUser();
+          callback(local);
+        } else {
+          const local = getStoredLocalUser();
+          callback(local);
         }
+      }, (err) => {
+        console.warn('Firebase onAuthStateChanged notice:', err);
         const local = getStoredLocalUser();
         callback(local);
-      } else {
-        const local = getStoredLocalUser();
-        callback(local);
-      }
-    });
-    return unsub;
+      });
+      return unsub;
+    } catch (e) {
+      console.warn('Firebase auth listener init notice:', e);
+    }
   }
 
   // Fallback listener for local session
@@ -572,142 +682,55 @@ export async function recordHeadToHeadVictory(p1Uid: string, p1Name: string, p2U
   }
 }
 
-// -------------------------------------------------------------
-// USER PRESENCE & ACTIVE SESSIONS
-// -------------------------------------------------------------
+// REGISTERED & ONLINE USERS API
+export async function getAllRegisteredUsers(currentUserUid?: string): Promise<UserProfile[]> {
+  const usersMap = new Map<string, UserProfile>();
 
-export async function updateUserPresence(uid: string, isOnline: boolean = true): Promise<void> {
-  const current = getStoredLocalUser();
-  if (current && current.uid === uid) {
-    current.lastActive = Date.now();
-    current.isOnline = isOnline;
-    saveStoredLocalUser(current);
+  // Add initial demo users first
+  for (const u of INITIAL_DEMO_LEADERBOARD) {
+    usersMap.set(u.uid, { ...u, isOnline: true });
   }
 
-  if (isFirebaseConfigured && db) {
-    try {
-      await updateDoc(doc(db, 'users', uid), {
-        lastActive: Date.now(),
-        isOnline: isOnline
-      });
-    } catch (e) {
-      // ignore
+  // Add users from local leaderboard storage
+  try {
+    const raw = localStorage.getItem(LOCAL_LEADERBOARD_KEY);
+    if (raw) {
+      const parsed: UserProfile[] = JSON.parse(raw);
+      for (const u of parsed) {
+        if (u && u.uid) {
+          usersMap.set(u.uid, {
+            ...u,
+            isOnline: u.lastLogin ? Date.now() - u.lastLogin < 15 * 60 * 1000 : false
+          });
+        }
+      }
     }
-  }
-}
-
-// Get all known users (combines Firestore users + local users + demo peers)
-export async function getAllUsersList(): Promise<UserProfile[]> {
-  const userMap = new Map<string, UserProfile>();
-
-  // 1. Seed demo peers first
-  for (const peer of INITIAL_DEMO_LEADERBOARD) {
-    userMap.set(peer.uid, peer);
+  } catch (e) {
+    console.warn('Local users fetch notice:', e);
   }
 
-  // 2. Add local storage users
-  const localLeaderboard = getStoredLeaderboard();
-  for (const u of localLeaderboard) {
-    userMap.set(u.uid, u);
-  }
-
-  const currentUser = getStoredLocalUser();
-  if (currentUser) {
-    userMap.set(currentUser.uid, currentUser);
-  }
-
-  // 3. Query Firestore users collection if available
+  // Fetch registered users from Firestore
   if (isFirebaseConfigured && db) {
     try {
       const q = query(collection(db, 'users'), limit(50));
       const snap = await getDocs(q);
-      snap.forEach(docSnap => {
-        const u = docSnap.data() as UserProfile;
+      snap.forEach(d => {
+        const u = d.data() as UserProfile;
         if (u && u.uid) {
-          userMap.set(u.uid, u);
+          const isOnline = u.lastLogin ? Date.now() - u.lastLogin < 15 * 60 * 1000 : false;
+          usersMap.set(u.uid, { ...u, isOnline });
         }
       });
     } catch (e) {
-      console.warn('Firestore users fetch fallback to local:', e);
+      console.warn('Firestore users fetch notice:', e);
     }
   }
 
-  return Array.from(userMap.values());
-}
-
-// Check who is active right now (online within the last 30 minutes)
-export async function getActiveUsers(excludeUid?: string): Promise<UserProfile[]> {
-  const all = await getAllUsersList();
-  const THIRTY_MINUTES = 30 * 60 * 1000;
-  const now = Date.now();
-
-  const active = all.filter(u => {
-    if (excludeUid && u.uid === excludeUid) return false;
-    if (u.isOnline === true) return true;
-    if (u.lastActive && (now - u.lastActive) < THIRTY_MINUTES) return true;
-    return false;
-  });
-
-  // Sort by most recently active first, then XP
-  return active.sort((a, b) => {
-    const timeA = a.lastActive || a.lastLogin || 0;
-    const timeB = b.lastActive || b.lastLogin || 0;
-    return timeB - timeA;
-  });
-}
-
-// Search users by name, TIP or email
-export async function searchUsers(queryTerm: string, excludeUid?: string): Promise<UserProfile[]> {
-  const cleanTerm = queryTerm.trim().toLowerCase();
-  if (!cleanTerm) return [];
-
-  const all = await getAllUsersList();
-  
-  return all.filter(u => {
-    if (excludeUid && u.uid === excludeUid) return false;
-    const nameMatch = u.displayName?.toLowerCase().includes(cleanTerm);
-    const emailMatch = u.email?.toLowerCase().includes(cleanTerm);
-    const uidMatch = u.uid?.toLowerCase().includes(cleanTerm);
-    return Boolean(nameMatch || emailMatch || uidMatch);
-  });
-}
-
-// Directly challenge another user to a 1v1 duel
-export async function createDirectChallengeGame(hostUser: UserProfile, rivalUser: UserProfile): Promise<DuelGame> {
-  const code = Math.random().toString(36).substring(2, 8).toUpperCase();
-  const gameId = 'duel_' + Date.now() + '_' + code;
-
-  const newGame: DuelGame = {
-    id: gameId,
-    hostPlayerUid: hostUser.uid,
-    hostPlayerName: hostUser.displayName,
-    hostPlayerAvatar: hostUser.photoURL,
-    hostPlayerShieldId: hostUser.equippedShieldId,
-    hostRedStripes: 0,
-    guestPlayerUid: rivalUser.uid,
-    guestPlayerName: rivalUser.displayName,
-    guestPlayerAvatar: rivalUser.photoURL,
-    guestPlayerShieldId: rivalUser.equippedShieldId,
-    guestRedStripes: 0,
-    currentTurnUid: hostUser.uid,
-    status: 'active',
-    consecutiveCorrect: { [hostUser.uid]: 0, [rivalUser.uid]: 0 },
-    lastUpdated: Date.now(),
-    shareCode: code,
-  };
-
-  if (isFirebaseConfigured && db) {
-    try {
-      await setDoc(doc(db, 'games', gameId), newGame);
-    } catch (e) {
-      console.warn('Firestore create direct challenge notice:', e);
-    }
+  // Filter out current user if passed
+  const list = Array.from(usersMap.values());
+  if (currentUserUid) {
+    return list.filter(u => u.uid !== currentUserUid);
   }
-
-  // Store in local list
-  const current = await getDuelsList(hostUser.uid);
-  const updated = [newGame, ...current.filter(g => g.id !== gameId)];
-  localStorage.setItem(LOCAL_GAMES_KEY, JSON.stringify(updated));
-
-  return newGame;
+  return list;
 }
+

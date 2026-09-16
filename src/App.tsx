@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { UserProfile, SpecializedShield, DuelGame } from './types';
+import { UserProfile, SpecializedShield } from './types';
 import { 
   initAuthListener, 
   logOutUser, 
   syncUserProfileUpdate, 
   loadUserProfile,
-  updateUserPresence,
-  getActiveUsers,
-  createDirectChallengeGame
+  getUnauthorizedDomainAlert,
+  subscribeUnauthorizedDomainAlert,
+  UnauthorizedDomainInfo
 } from './firebase';
 import { calculateRank } from './data/ranks';
 import { SPECIALIZED_SHIELDS } from './data/badges';
@@ -19,19 +19,27 @@ import { TiendaEscuts } from './components/TiendaEscuts';
 import { SeccioRepas } from './components/SeccioRepas';
 import { RankingGlobal } from './components/RankingGlobal';
 import { ImportQuestionsModal } from './components/ImportQuestionsModal';
-import { ActiveUsersModal } from './components/ActiveUsersModal';
+import { AdminPanelModal } from './components/AdminPanelModal';
 import confetti from 'canvas-confetti';
-import { Upload, Sparkles, AlertCircle } from 'lucide-react';
+import { Upload, Sparkles, AlertCircle, Copy, Check, X, ShieldAlert } from 'lucide-react';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [activeTab, setActiveTab] = useState<ActiveTab>('campanya');
   const [showImportModal, setShowImportModal] = useState(false);
-  const [showActiveUsersModal, setShowActiveUsersModal] = useState(false);
-  const [activeUsersCount, setActiveUsersCount] = useState(3);
-  const [directDuelGame, setDirectDuelGame] = useState<DuelGame | null>(null);
+  const [showAdminModal, setShowAdminModal] = useState(false);
   const [rankUpNotification, setRankUpNotification] = useState<string | null>(null);
+  const [domainAlert, setDomainAlert] = useState<UnauthorizedDomainInfo | null>(getUnauthorizedDomainAlert());
+  const [domainCopied, setDomainCopied] = useState(false);
+
+  // Subscribe to unauthorized domain notices
+  useEffect(() => {
+    const unsub = subscribeUnauthorizedDomainAlert((info) => {
+      setDomainAlert(info);
+    });
+    return unsub;
+  }, []);
 
   // Initialize Firebase Auth Listener
   useEffect(() => {
@@ -41,8 +49,6 @@ export default function App() {
         if (fullProfile) {
           // Re-calculate rank based on XP
           fullProfile.rank = calculateRank(fullProfile.xp);
-          fullProfile.isOnline = true;
-          fullProfile.lastActive = Date.now();
           setCurrentUser(fullProfile);
         } else {
           setCurrentUser(user);
@@ -58,49 +64,10 @@ export default function App() {
     };
   }, []);
 
-  // Periodic Presence Heartbeat & Active Users Count Update
-  useEffect(() => {
-    if (!currentUser) return;
-
-    const refreshPresence = async () => {
-      try {
-        await updateUserPresence(currentUser.uid, true);
-        const active = await getActiveUsers(currentUser.uid);
-        setActiveUsersCount(active.length);
-      } catch (err) {
-        // silent
-      }
-    };
-
-    refreshPresence();
-    const interval = setInterval(refreshPresence, 60 * 1000); // every minute
-
-    return () => clearInterval(interval);
-  }, [currentUser?.uid]);
-
   // Handle Logout
   const handleLogout = async () => {
-    if (currentUser) {
-      await updateUserPresence(currentUser.uid, false);
-    }
     await logOutUser();
     setCurrentUser(null);
-  };
-
-  // Launch direct duel with a challenged user
-  const handleStartDirectDuel = (game: DuelGame) => {
-    setDirectDuelGame(game);
-    setActiveTab('duels');
-  };
-
-  const handleChallengeFromRanking = async (player: UserProfile) => {
-    if (!currentUser) return;
-    try {
-      const newGame = await createDirectChallengeGame(currentUser, player);
-      handleStartDirectDuel(newGame);
-    } catch (err) {
-      console.error('Error starting duel from ranking:', err);
-    }
   };
 
   // Update Stats: XP, Merits, Failed question, Saved question
@@ -180,6 +147,23 @@ export default function App() {
     await syncUserProfileUpdate(updatedUser);
   };
 
+  // Toggle Save Mnemonic Rule or Trap for review
+  const handleToggleSaveMnemonic = async (ruleId: string) => {
+    if (!currentUser) return;
+    let updatedRules = [...(currentUser.savedMnemonicIds || [])];
+    if (updatedRules.includes(ruleId)) {
+      updatedRules = updatedRules.filter(id => id !== ruleId);
+    } else {
+      updatedRules.push(ruleId);
+    }
+    const updatedUser: UserProfile = {
+      ...currentUser,
+      savedMnemonicIds: updatedRules
+    };
+    setCurrentUser(updatedUser);
+    await syncUserProfileUpdate(updatedUser);
+  };
+
   // Equip Shield
   const handleEquipShield = async (shieldId: string) => {
     if (!currentUser) return;
@@ -226,6 +210,41 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col selection:bg-amber-500 selection:text-slate-950">
+      {/* Authorized Domain Notice for Cloud Run / Preview Environments */}
+      {domainAlert && (
+        <div className="bg-amber-950/90 border-b border-amber-800/80 text-amber-200 text-xs px-4 py-2.5 flex items-center justify-between gap-3 shadow-md z-40 backdrop-blur">
+          <div className="flex items-center gap-2 max-w-4xl truncate">
+            <ShieldAlert className="w-4 h-4 text-amber-400 shrink-0" />
+            <span className="truncate">
+              <strong className="text-amber-300">Mode Local actiu:</strong> El domini <code className="bg-amber-900/60 px-1.5 py-0.5 rounded text-white font-mono text-[11px]">{domainAlert.domain}</code> no està autoritzat a Firebase Auth. Les dades i el progrés es desen al perfil local.
+            </span>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => {
+                navigator.clipboard.writeText(domainAlert.domain);
+                setDomainCopied(true);
+                setTimeout(() => setDomainCopied(false), 3000);
+              }}
+              title="Copiar domini per afegir-lo a Firebase Console"
+              className="px-2.5 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 rounded-lg text-xs font-bold flex items-center gap-1 border border-amber-500/40 cursor-pointer"
+            >
+              {domainCopied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+              <span>{domainCopied ? 'Copiat!' : 'Copiar Domini'}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setDomainAlert(null)}
+              className="p-1 hover:bg-amber-900/60 rounded-md text-amber-400 hover:text-white cursor-pointer"
+              title="Tancar avís"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Rank Up Global Toast */}
       {rankUpNotification && (
         <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 p-4 bg-gradient-to-r from-amber-500 to-amber-600 text-slate-950 font-black rounded-2xl shadow-2xl flex items-center gap-3 border border-white animate-in slide-in-from-top duration-300">
@@ -240,12 +259,11 @@ export default function App() {
         activeTab={activeTab}
         onTabChange={setActiveTab}
         onLogout={handleLogout}
-        onOpenActiveUsers={() => setShowActiveUsersModal(true)}
-        activeUsersCount={activeUsersCount}
+        onOpenAdminPanel={() => setShowAdminModal(true)}
       />
 
       {/* Main Game Screen View */}
-      <main className="flex-1 pb-24 sm:pb-16">
+      <main className="flex-1 pb-16">
         {activeTab === 'campanya' && (
           <ModeCampanya
             user={currentUser}
@@ -259,8 +277,6 @@ export default function App() {
             user={currentUser}
             onUpdateUserStats={(xp, merits, failedId) => handleUpdateStats(xp, merits, failedId)}
             onSaveQuestionToggle={handleToggleSaveQuestion}
-            onOpenActiveUsers={() => setShowActiveUsersModal(true)}
-            initialActiveGame={directDuelGame}
           />
         )}
 
@@ -277,30 +293,26 @@ export default function App() {
             user={currentUser}
             onRemoveFailedQuestion={handleRemoveFailedQuestion}
             onToggleSaveQuestion={handleToggleSaveQuestion}
+            onToggleSaveMnemonic={handleToggleSaveMnemonic}
             onUpdateStats={(xp, merits) => handleUpdateStats(xp, merits)}
           />
         )}
 
         {activeTab === 'ranking' && (
-          <RankingGlobal 
-            currentUser={currentUser} 
-            onOpenActiveUsers={() => setShowActiveUsersModal(true)}
-            onChallengePlayer={handleChallengeFromRanking}
-          />
+          <RankingGlobal currentUser={currentUser} />
         )}
       </main>
 
-      {/* Floating Bottom Quick Action: Import Questions (elevated on mobile so it doesn't overlap bottom bar) */}
-      <div className="fixed bottom-20 sm:bottom-4 right-3 sm:right-4 z-30">
+      {/* Floating Bottom Quick Action: Import Questions */}
+      <div className="fixed bottom-4 right-4 z-30">
         <button
           type="button"
           onClick={() => setShowImportModal(true)}
           title="Importar preguntes d'arxius externs"
-          className="px-3 py-2 sm:px-3.5 sm:py-2.5 bg-slate-900/95 hover:bg-slate-800 text-sky-400 hover:text-sky-300 border border-slate-700/80 rounded-2xl text-xs font-bold flex items-center gap-1.5 sm:gap-2 shadow-xl backdrop-blur cursor-pointer transition-all hover:scale-105"
+          className="px-3.5 py-2.5 bg-slate-900/90 hover:bg-slate-800 text-sky-400 hover:text-sky-300 border border-slate-700/80 rounded-2xl text-xs font-bold flex items-center gap-2 shadow-xl backdrop-blur cursor-pointer transition-all hover:scale-105"
         >
-          <Upload className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+          <Upload className="w-4 h-4" />
           <span className="hidden sm:inline">Importar Preguntes (.json)</span>
-          <span className="sm:hidden text-[11px]">Banc</span>
         </button>
       </div>
 
@@ -313,15 +325,12 @@ export default function App() {
         }}
       />
 
-      {/* Active Users & Search Modal */}
-      {currentUser && (
-        <ActiveUsersModal
-          isOpen={showActiveUsersModal}
-          onClose={() => setShowActiveUsersModal(false)}
-          currentUser={currentUser}
-          onStartDuelWithUser={handleStartDirectDuel}
-        />
-      )}
+      {/* Admin Panel Modal (Exclusive to opossscar@gmail.com / isAdmin) */}
+      <AdminPanelModal
+        isOpen={showAdminModal}
+        onClose={() => setShowAdminModal(false)}
+        currentUserEmail={currentUser.email}
+      />
     </div>
   );
 }

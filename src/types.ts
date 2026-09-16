@@ -19,6 +19,7 @@ export interface UserProfile {
   email: string;
   displayName: string;
   photoURL?: string;
+  isAdmin?: boolean;
   xp: number;
   merits: number;
   rank: PoliceRank;
@@ -26,18 +27,19 @@ export interface UserProfile {
   unlockedShieldIds: string[];
   failedQuestionIds: string[];
   savedQuestionIds: string[];
+  savedMnemonicIds?: string[];
   createdAt?: number;
   lastLogin?: number;
-  lastActive?: number;
   isOnline?: boolean;
 }
 
-export type QuestionAmbit = 
-  | 'Àmbit A' 
-  | 'Àmbit B' 
-  | 'Àmbit C' 
-  | 'Actualitat' 
-  | 'ISPC';
+export type QuestionAmbit = 'Àmbit A' | 'Àmbit B' | 'Àmbit C' | 'Actualitat' | 'ISPC' | string;
+
+export interface ReviewConceptItem {
+  concepte: string;
+  detall: string;
+  color: 'blue' | 'red' | 'green' | 'yellow';
+}
 
 export interface Question {
   id: string;
@@ -51,6 +53,11 @@ export interface Question {
   guiaPagina?: string;
   guiaTema?: string;
   clauTribunal?: string;
+  quadreMemoritzar?: {
+    titol: string;
+    items: ReviewConceptItem[];
+    reglaExamen: string;
+  };
   confusionAlert?: {
     conceptA: string;
     conceptB: string;

@@ -1,8 +1,16 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { UserProfile } from '../types';
-import { loginWithGoogle, loginWithEmailPassword, registerWithEmailPassword } from '../firebase';
+import { 
+  loginWithGoogle, 
+  loginWithEmailPassword, 
+  registerWithEmailPassword, 
+  loginAsGuest,
+  getUnauthorizedDomainAlert,
+  subscribeUnauthorizedDomainAlert,
+  UnauthorizedDomainInfo
+} from '../firebase';
 import { OfficialEmblem } from './OfficialEmblem';
-import { Shield, Sparkles, Mail, Lock, User, AlertCircle, ArrowRight } from 'lucide-react';
+import { Shield, Sparkles, Mail, Lock, User, AlertCircle, ArrowRight, Copy, Check, Info } from 'lucide-react';
 
 interface AuthModalProps {
   onLoginSuccess: (profile: UserProfile) => void;
@@ -15,6 +23,15 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onLoginSuccess }) => {
   const [displayName, setDisplayName] = useState('');
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [unauthorizedInfo, setUnauthorizedInfo] = useState<UnauthorizedDomainInfo | null>(getUnauthorizedDomainAlert());
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    const unsub = subscribeUnauthorizedDomainAlert((info) => {
+      setUnauthorizedInfo(info);
+    });
+    return unsub;
+  }, []);
 
   const handleGoogleAuth = async () => {
     try {
@@ -23,8 +40,21 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onLoginSuccess }) => {
       const profile = await loginWithGoogle();
       onLoginSuccess(profile);
     } catch (err: any) {
-      console.error(err);
-      setErrorMsg('Error en iniciar sessió amb Google. Reintenta-ho.');
+      const msg = err?.message || 'Error en iniciar sessió amb Google.';
+      setErrorMsg(msg);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGuestAuth = async () => {
+    try {
+      setLoading(true);
+      setErrorMsg(null);
+      const profile = await loginAsGuest(displayName || 'Aspirant Medina');
+      onLoginSuccess(profile);
+    } catch (err: any) {
+      setErrorMsg('No s\'ha pogut iniciar la sessió en mode Aspirant.');
     } finally {
       setLoading(false);
     }
@@ -52,23 +82,29 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onLoginSuccess }) => {
       }
       onLoginSuccess(profile);
     } catch (err: any) {
-      console.error(err);
-      setErrorMsg(err.message || 'Error en autenticar. Comprova les dades.');
+      setErrorMsg(err?.message || 'Error en autenticar. Comprova les dades.');
     } finally {
       setLoading(false);
     }
   };
 
+  const copyDomain = () => {
+    const domain = unauthorizedInfo?.domain || window.location.hostname;
+    navigator.clipboard.writeText(domain);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 3000);
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md">
-      <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl relative overflow-hidden">
+      <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl relative overflow-hidden max-h-[95vh] overflow-y-auto">
         {/* Glow accent */}
         <div className="absolute -top-24 -right-24 w-48 h-48 bg-amber-500/15 rounded-full blur-3xl pointer-events-none" />
         <div className="absolute -bottom-24 -left-24 w-48 h-48 bg-sky-500/15 rounded-full blur-3xl pointer-events-none" />
 
         {/* Emblema corporatiu oficial */}
-        <div className="flex flex-col items-center text-center mb-6">
-          <OfficialEmblem size={110} />
+        <div className="flex flex-col items-center text-center mb-5">
+          <OfficialEmblem size={100} />
           <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white mt-3">
             Agent Medina
           </h1>
@@ -78,12 +114,35 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onLoginSuccess }) => {
         </div>
 
         {/* Informació de perfil obligatori */}
-        <div className="bg-slate-800/60 border border-slate-700/60 rounded-2xl p-3.5 mb-6 text-xs text-slate-300 flex items-start gap-2.5">
+        <div className="bg-slate-800/60 border border-slate-700/60 rounded-2xl p-3.5 mb-5 text-xs text-slate-300 flex items-start gap-2.5">
           <Sparkles className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
           <div>
-            <span className="font-semibold text-slate-200">Inicia sessió per continuar:</span> El teu progrés d'XP, mèrits acumulats, escut equipat i duels 1v1 es guardaran de forma segura al teu perfil.
+            <span className="font-semibold text-slate-200">Accés segur:</span> El teu progrés d'XP, mèrits acumulats, escut equipat i duels 1v1 es desen al teu perfil.
           </div>
         </div>
+
+        {/* Unauthorized Domain Explanatory Helper if encountered */}
+        {unauthorizedInfo && (
+          <div className="mb-4 p-3.5 bg-amber-950/50 border border-amber-800/70 rounded-2xl text-xs text-amber-200/90 space-y-2">
+            <div className="flex items-start gap-2">
+              <Info className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+              <div>
+                <span className="font-bold text-amber-300">Domini en vista prèvia:</span> Aquest entorn ({unauthorizedInfo.domain}) requereix autorització a Firebase Console per a Google OAuth directe.
+              </div>
+            </div>
+            <div className="flex items-center justify-between gap-2 pt-1 border-t border-amber-900/60">
+              <span className="font-mono text-[11px] text-amber-300/80 truncate">{unauthorizedInfo.domain}</span>
+              <button
+                type="button"
+                onClick={copyDomain}
+                className="shrink-0 px-2 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 rounded-lg text-[11px] font-bold flex items-center gap-1 border border-amber-500/30 cursor-pointer"
+              >
+                {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                <span>{copied ? 'Copiat' : 'Copiar'}</span>
+              </button>
+            </div>
+          </div>
+        )}
 
         {errorMsg && (
           <div className="mb-4 p-3 bg-red-950/60 border border-red-800/80 rounded-xl text-xs text-red-300 flex items-center gap-2">
@@ -92,12 +151,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onLoginSuccess }) => {
           </div>
         )}
 
-        {/* Hero Google Login Button (Primary requirement) */}
+        {/* Hero Google Login Button */}
         <button
           type="button"
           onClick={handleGoogleAuth}
           disabled={loading}
-          className="w-full py-3.5 px-4 bg-white hover:bg-slate-100 text-slate-900 font-bold rounded-xl flex items-center justify-center gap-3 transition-all transform active:scale-95 shadow-md shadow-slate-950/30 mb-5 disabled:opacity-60 cursor-pointer"
+          className="w-full py-3.5 px-4 bg-white hover:bg-slate-100 text-slate-900 font-bold rounded-xl flex items-center justify-center gap-3 transition-all transform active:scale-95 shadow-md shadow-slate-950/30 mb-2.5 disabled:opacity-60 cursor-pointer"
         >
           <svg className="w-5 h-5" viewBox="0 0 24 24">
             <path
@@ -120,14 +179,25 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onLoginSuccess }) => {
           <span className="text-sm font-extrabold">Entrar amb el compte de Google</span>
         </button>
 
-        <div className="relative flex items-center justify-center my-4">
+        {/* Resilient Guest / Local Aspirant Login (Ensures immediate access on any domain) */}
+        <button
+          type="button"
+          onClick={handleGuestAuth}
+          disabled={loading}
+          className="w-full py-2.5 px-4 bg-slate-800/90 hover:bg-slate-700 text-amber-400 hover:text-amber-300 border border-slate-700/80 font-bold rounded-xl flex items-center justify-center gap-2 transition-all transform active:scale-95 text-xs shadow-sm mb-4 cursor-pointer disabled:opacity-60"
+        >
+          <Shield className="w-4 h-4 text-amber-400" />
+          <span>Accés Ràpid com a Aspirant (Mode Local / Preview)</span>
+        </button>
+
+        <div className="relative flex items-center justify-center my-3">
           <div className="border-t border-slate-800 w-full" />
-          <span className="bg-slate-900 px-3 text-xs text-slate-500 font-medium uppercase tracking-wider">o amb correu</span>
+          <span className="bg-slate-900 px-3 text-[11px] text-slate-500 font-medium uppercase tracking-wider">o amb correu</span>
           <div className="border-t border-slate-800 w-full" />
         </div>
 
         {/* Email Form */}
-        <form onSubmit={handleEmailAuth} className="space-y-3.5">
+        <form onSubmit={handleEmailAuth} className="space-y-3">
           {isRegisterMode && (
             <div>
               <label className="block text-xs font-semibold text-slate-300 mb-1">Nom o Àlies policial</label>
@@ -138,7 +208,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onLoginSuccess }) => {
                   value={displayName}
                   onChange={(e) => setDisplayName(e.target.value)}
                   placeholder="Ex: Mosso Medina"
-                  className="w-full pl-9 pr-3 py-2.5 bg-slate-800/80 border border-slate-700 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-amber-500"
+                  className="w-full pl-9 pr-3 py-2 bg-slate-800/80 border border-slate-700 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-amber-500"
                 />
               </div>
             </div>
@@ -153,7 +223,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onLoginSuccess }) => {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="opositor@correu.cat"
-                className="w-full pl-9 pr-3 py-2.5 bg-slate-800/80 border border-slate-700 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-amber-500"
+                className="w-full pl-9 pr-3 py-2 bg-slate-800/80 border border-slate-700 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-amber-500"
               />
             </div>
           </div>
@@ -167,7 +237,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onLoginSuccess }) => {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
-                className="w-full pl-9 pr-3 py-2.5 bg-slate-800/80 border border-slate-700 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-amber-500"
+                className="w-full pl-9 pr-3 py-2 bg-slate-800/80 border border-slate-700 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-amber-500"
               />
             </div>
           </div>
@@ -175,14 +245,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onLoginSuccess }) => {
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-3 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black rounded-xl text-sm flex items-center justify-center gap-2 transition-all transform active:scale-95 shadow-md shadow-amber-500/20 cursor-pointer disabled:opacity-60"
+            className="w-full py-2.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black rounded-xl text-sm flex items-center justify-center gap-2 transition-all transform active:scale-95 shadow-md shadow-amber-500/20 cursor-pointer disabled:opacity-60"
           >
             <span>{isRegisterMode ? 'Crear compte policial' : 'Iniciar sessió'}</span>
             <ArrowRight className="w-4 h-4" />
           </button>
         </form>
 
-        <div className="mt-5 text-center text-xs text-slate-400">
+        <div className="mt-4 text-center text-xs text-slate-400">
           {isRegisterMode ? (
             <span>
               Ja tens un perfil?{' '}

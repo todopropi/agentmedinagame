@@ -15,13 +15,16 @@ import {
   Trash2,
   ExternalLink,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  Bookmark,
+  Star
 } from 'lucide-react';
 
 interface SeccioRepasProps {
   user: UserProfile;
   onRemoveFailedQuestion: (questionId: string) => void;
   onToggleSaveQuestion: (questionId: string) => void;
+  onToggleSaveMnemonic?: (ruleId: string) => void;
   onUpdateStats: (xpGained: number, meritsGained: number) => void;
 }
 
@@ -29,15 +32,22 @@ export const SeccioRepas: React.FC<SeccioRepasProps> = ({
   user,
   onRemoveFailedQuestion,
   onToggleSaveQuestion,
+  onToggleSaveMnemonic,
   onUpdateStats
 }) => {
-  const [subTab, setSubTab] = useState<'fallades' | 'guardades' | 'confusions' | 'mnemo'>('fallades');
+  const [subTab, setSubTab] = useState<'fallades' | 'guardades' | 'regles_guardades' | 'confusions' | 'mnemo'>('fallades');
   const [activePracticeQuestion, setActivePracticeQuestion] = useState<Question | null>(null);
   const [expandedConfusionId, setExpandedConfusionId] = useState<string | null>(CONFUSION_CONCEPTS[0].id);
 
   // Get failed and saved questions
   const failedQuestions = QUESTIONS_BANK.filter(q => user.failedQuestionIds?.includes(q.id));
   const savedQuestions = QUESTIONS_BANK.filter(q => user.savedQuestionIds?.includes(q.id));
+
+  // Saved rules & traps (mnemonics & confusion concepts)
+  const savedMnemonicIds = user.savedMnemonicIds || [];
+  const savedMnemonics = MNEMONIC_CARDS.filter(m => savedMnemonicIds.includes(m.id));
+  const savedConfusions = CONFUSION_CONCEPTS.filter(c => savedMnemonicIds.includes(c.id));
+  const totalSavedRules = savedMnemonics.length + savedConfusions.length;
 
   const handlePracticeOutcome = (isCorrect: boolean) => {
     if (!activePracticeQuestion) return;
@@ -73,6 +83,9 @@ export const SeccioRepas: React.FC<SeccioRepasProps> = ({
             <div className="px-3.5 py-2 bg-amber-950/40 border border-amber-500/40 rounded-xl text-xs font-bold text-amber-300">
               {savedQuestions.length} Guardades
             </div>
+            <div className="px-3.5 py-2 bg-sky-950/40 border border-sky-500/40 rounded-xl text-xs font-bold text-sky-300">
+              {totalSavedRules} Regles/Trampes
+            </div>
           </div>
         </div>
 
@@ -100,6 +113,18 @@ export const SeccioRepas: React.FC<SeccioRepasProps> = ({
           >
             <BookmarkCheck className="w-3.5 h-3.5" />
             <span>Preguntes Guardades ({savedQuestions.length})</span>
+          </button>
+
+          <button
+            onClick={() => { setSubTab('regles_guardades'); setActivePracticeQuestion(null); }}
+            className={`px-3.5 py-2 rounded-xl text-xs font-extrabold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap ${
+              subTab === 'regles_guardades'
+                ? 'bg-amber-400 text-slate-950 shadow-md shadow-amber-400/20'
+                : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+            }`}
+          >
+            <Star className="w-3.5 h-3.5" />
+            <span>Regles i Trampes Guardades ({totalSavedRules})</span>
           </button>
 
           <button
@@ -277,28 +302,152 @@ export const SeccioRepas: React.FC<SeccioRepasProps> = ({
         </div>
       )}
 
+      {/* TAB 2.5: Saved Rules & Traps (Regles i Trampes Guardades) */}
+      {subTab === 'regles_guardades' && (
+        <div className="space-y-6">
+          {totalSavedRules === 0 ? (
+            <div className="bg-slate-900 border border-slate-800 rounded-3xl p-12 text-center text-slate-400">
+              <Star className="w-12 h-12 text-amber-400 mx-auto mb-3" />
+              <h3 className="text-lg font-black text-white">No tens regles o conceptes trampa guardats a favorits</h3>
+              <p className="text-xs text-slate-400 max-w-md mx-auto mt-1">
+                Prem el botó de l'estrella ⭐ a la secció de <b>Conceptes Trampa</b> o <b>Regles Mnemotècniques</b> per guardar les fitxes clau que vulguis repassar abans del dia de l'examen oficial.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-6">
+              {/* Saved Mnemonic Cards */}
+              {savedMnemonics.length > 0 && (
+                <div className="space-y-3">
+                  <h3 className="text-sm font-black text-sky-400 flex items-center gap-2">
+                    <Brain className="w-4 h-4" />
+                    <span>Regles Mnemotècniques Preferides ({savedMnemonics.length})</span>
+                  </h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {savedMnemonics.map((card) => (
+                      <div
+                        key={card.id}
+                        className="bg-slate-900 border border-sky-500/40 rounded-2xl p-5 shadow-lg flex flex-col justify-between"
+                      >
+                        <div>
+                          <div className="flex items-start justify-between gap-2 mb-2">
+                            <h4 className="text-sm font-black text-white">{card.titol}</h4>
+                            {onToggleSaveMnemonic && (
+                              <button
+                                onClick={() => onToggleSaveMnemonic(card.id)}
+                                title="Treure de favorits"
+                                className="text-amber-400 hover:text-red-400 p-1 rounded hover:bg-slate-800 cursor-pointer"
+                              >
+                                <Star className="w-4 h-4 fill-amber-400" />
+                              </button>
+                            )}
+                          </div>
+                          <div className="px-3 py-2 bg-sky-950/50 border border-sky-500/30 rounded-xl text-xs font-extrabold text-sky-300 mb-3">
+                            {card.regla}
+                          </div>
+                          <p className="text-xs text-slate-300 leading-relaxed">
+                            {card.detall}
+                          </p>
+                        </div>
+                        <div className="mt-4 pt-3 border-t border-slate-800 text-[10px] text-sky-400 font-mono">
+                          ★ Fitxa guardada a la teva memòria
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Saved Confusion Concepts */}
+              {savedConfusions.length > 0 && (
+                <div className="space-y-3">
+                  <h3 className="text-sm font-black text-purple-400 flex items-center gap-2">
+                    <Sparkles className="w-4 h-4" />
+                    <span>Conceptes Trampa / Anti-Confusió Preferits ({savedConfusions.length})</span>
+                  </h3>
+                  <div className="space-y-3">
+                    {savedConfusions.map((item) => (
+                      <div
+                        key={item.id}
+                        className="bg-slate-900 border border-purple-500/40 rounded-2xl p-5 shadow-lg space-y-4"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <span className="p-1.5 bg-purple-500/20 text-purple-300 rounded-lg text-xs">⚡</span>
+                            <h4 className="text-sm font-extrabold text-white">{item.titol}</h4>
+                            <span className="text-[11px] text-purple-300 bg-purple-950/60 px-2 py-0.5 rounded border border-purple-800/40">{item.ambit}</span>
+                          </div>
+                          {onToggleSaveMnemonic && (
+                            <button
+                              onClick={() => onToggleSaveMnemonic(item.id)}
+                              title="Treure de favorits"
+                              className="text-amber-400 hover:text-red-400 p-1 rounded hover:bg-slate-800 cursor-pointer"
+                            >
+                              <Star className="w-4 h-4 fill-amber-400" />
+                            </button>
+                          )}
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div className="bg-slate-800/80 border border-slate-700 rounded-xl p-3.5">
+                            <h5 className="text-xs font-black text-sky-400 mb-1.5">{item.concepteA.nom}</h5>
+                            <ul className="text-xs text-slate-300 space-y-1 list-disc pl-4 mb-2">
+                              {item.concepteA.caracteristiques.map((c, i) => <li key={i}>{c}</li>)}
+                            </ul>
+                            <div className="p-2 bg-sky-950/60 border border-sky-800 rounded-lg text-[11px] text-sky-200">
+                              <b>⚠️ Parany:</b> {item.concepteA.trampaExamen}
+                            </div>
+                          </div>
+
+                          <div className="bg-slate-800/80 border border-slate-700 rounded-xl p-3.5">
+                            <h5 className="text-xs font-black text-amber-400 mb-1.5">{item.concepteB.nom}</h5>
+                            <ul className="text-xs text-slate-300 space-y-1 list-disc pl-4 mb-2">
+                              {item.concepteB.caracteristiques.map((c, i) => <li key={i}>{c}</li>)}
+                            </ul>
+                            <div className="p-2 bg-amber-950/60 border border-amber-800 rounded-lg text-[11px] text-amber-200">
+                              <b>⚠️ Parany:</b> {item.concepteB.trampaExamen}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="p-3 bg-gradient-to-r from-purple-950/50 to-indigo-950/50 border border-purple-500/40 rounded-xl text-xs text-purple-200 flex items-center gap-2">
+                          <Sparkles className="w-4 h-4 text-purple-400 shrink-0" />
+                          <span><b>Regla 1 segon:</b> {item.reglaMnemotecnica}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* TAB 3: Anti-Confusion Concepts (Tribunal Traps) */}
       {subTab === 'confusions' && (
         <div className="space-y-4">
           <div className="p-4 bg-purple-950/40 border border-purple-800/40 rounded-2xl text-xs text-purple-200">
-            <b>💡 Taula d'Atenció al Detall:</b> Aquí trobes les distincions conceptuals exactes on més aspirants fallen a les proves oficials dels Mossos d'Esquadra i Policia Local.
+            <b>💡 Taula d'Atenció al Detall:</b> Aquí trobes les distincions conceptuals exactes on més aspirants fallen a les proves oficials dels Mossos d'Esquadra i Policia Local. Fes clic a l'estrella ⭐ per guardar la fitxa a favorits.
           </div>
 
           <div className="space-y-3">
             {CONFUSION_CONCEPTS.map((item) => {
               const isExpanded = expandedConfusionId === item.id;
+              const isSaved = savedMnemonicIds.includes(item.id);
 
               return (
                 <div 
                   key={item.id}
-                  className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden transition-all"
+                  className={`bg-slate-900 border rounded-2xl overflow-hidden transition-all ${
+                    isSaved ? 'border-amber-500/40' : 'border-slate-800'
+                  }`}
                 >
-                  <button
-                    type="button"
-                    onClick={() => setExpandedConfusionId(isExpanded ? null : item.id)}
-                    className="w-full p-4 sm:p-5 flex items-center justify-between text-left hover:bg-slate-800/40 transition-colors cursor-pointer"
-                  >
-                    <div className="flex items-center gap-3">
+                  <div className="w-full p-4 sm:p-5 flex items-center justify-between text-left hover:bg-slate-800/40 transition-colors">
+                    <button
+                      type="button"
+                      onClick={() => setExpandedConfusionId(isExpanded ? null : item.id)}
+                      className="flex-1 flex items-center gap-3 cursor-pointer text-left"
+                    >
                       <span className="p-2 bg-purple-500/20 text-purple-400 rounded-xl text-sm font-bold">
                         ⚡
                       </span>
@@ -310,9 +459,31 @@ export const SeccioRepas: React.FC<SeccioRepasProps> = ({
                           {item.ambit}
                         </span>
                       </div>
+                    </button>
+                    
+                    <div className="flex items-center gap-2">
+                      {onToggleSaveMnemonic && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onToggleSaveMnemonic(item.id);
+                          }}
+                          title={isSaved ? 'Treure de favorits' : 'Guardar a favorits'}
+                          className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-amber-400 transition-colors cursor-pointer"
+                        >
+                          <Star className={`w-4 h-4 ${isSaved ? 'fill-amber-400 text-amber-400' : ''}`} />
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setExpandedConfusionId(isExpanded ? null : item.id)}
+                        className="p-1 text-slate-400 cursor-pointer"
+                      >
+                        {isExpanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+                      </button>
                     </div>
-                    {isExpanded ? <ChevronUp className="w-5 h-5 text-slate-400" /> : <ChevronDown className="w-5 h-5 text-slate-400" />}
-                  </button>
+                  </div>
 
                   {isExpanded && (
                     <div className="p-4 sm:p-6 border-t border-slate-800 bg-slate-900/60 space-y-4 animate-in fade-in">
@@ -367,29 +538,52 @@ export const SeccioRepas: React.FC<SeccioRepasProps> = ({
 
       {/* TAB 4: Mnemonic Cards */}
       {subTab === 'mnemo' && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {MNEMONIC_CARDS.map((card, idx) => (
-            <div
-              key={idx}
-              className="bg-slate-900 border border-slate-800 hover:border-sky-500/50 rounded-2xl p-5 shadow-lg transition-all flex flex-col justify-between"
-            >
-              <div>
-                <h4 className="text-sm font-black text-white mb-2">
-                  {card.titol}
-                </h4>
-                <div className="px-3 py-2 bg-sky-950/40 border border-sky-500/30 rounded-xl text-xs font-extrabold text-sky-300 mb-3">
-                  {card.regla}
-                </div>
-                <p className="text-xs text-slate-300 leading-relaxed">
-                  {card.detall}
-                </p>
-              </div>
+        <div className="space-y-4">
+          <div className="p-4 bg-sky-950/40 border border-sky-800/40 rounded-2xl text-xs text-sky-200">
+            <b>🧠 Fitxes Mnemotècniques Oficials:</b> Fórmules i regles ràpides per fixar dades numèriques, terminis i estructures orgàniques clau de la Guia d'Estudi 2026. Prem l'estrella ⭐ per desar-les a la teva col·lecció.
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {MNEMONIC_CARDS.map((card, idx) => {
+              const isSaved = savedMnemonicIds.includes(card.id);
+              return (
+                <div
+                  key={card.id || idx}
+                  className={`bg-slate-900 border rounded-2xl p-5 shadow-lg transition-all flex flex-col justify-between ${
+                    isSaved ? 'border-amber-500/60 shadow-amber-500/10' : 'border-slate-800 hover:border-sky-500/50'
+                  }`}
+                >
+                  <div>
+                    <div className="flex items-start justify-between gap-2 mb-2">
+                      <h4 className="text-sm font-black text-white">
+                        {card.titol}
+                      </h4>
+                      {onToggleSaveMnemonic && (
+                        <button
+                          type="button"
+                          onClick={() => onToggleSaveMnemonic(card.id)}
+                          title={isSaved ? 'Treure de favorits' : 'Guardar a favorits'}
+                          className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-amber-400 transition-colors cursor-pointer"
+                        >
+                          <Star className={`w-4 h-4 ${isSaved ? 'fill-amber-400 text-amber-400' : ''}`} />
+                        </button>
+                      )}
+                    </div>
+                    <div className="px-3 py-2 bg-sky-950/40 border border-sky-500/30 rounded-xl text-xs font-extrabold text-sky-300 mb-3">
+                      {card.regla}
+                    </div>
+                    <p className="text-xs text-slate-300 leading-relaxed">
+                      {card.detall}
+                    </p>
+                  </div>
 
-              <div className="mt-4 pt-3 border-t border-slate-800/80 text-[10px] text-slate-500 font-mono">
-                Regla Mnemotècnica #{idx + 1} per opositors
-              </div>
-            </div>
-          ))}
+                  <div className="mt-4 pt-3 border-t border-slate-800/80 text-[10px] text-slate-500 font-mono flex items-center justify-between">
+                    <span>Regla Mnemotècnica #{idx + 1}</span>
+                    {isSaved && <span className="text-amber-400 font-bold">★ Guardada</span>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
     </div>

@@ -1,52 +1,29 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { UserProfile } from '../types';
-import { getAllUsersList } from '../firebase';
+import { getStoredLeaderboard } from '../firebase';
 import { ShieldRenderer } from './ShieldRenderer';
-import { Trophy, Medal, Crown, Sparkles, Award, Swords, Radio, Search } from 'lucide-react';
-import { AudioEngine } from '../utils/audio';
+import { Trophy, Medal, Crown, Sparkles, Award } from 'lucide-react';
 
 interface RankingGlobalProps {
   currentUser: UserProfile;
-  onOpenActiveUsers?: () => void;
-  onChallengePlayer?: (player: UserProfile) => void;
 }
 
-export const RankingGlobal: React.FC<RankingGlobalProps> = ({ 
-  currentUser,
-  onOpenActiveUsers,
-  onChallengePlayer
-}) => {
-  const [userList, setUserList] = useState<UserProfile[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const loadRankings = async () => {
-      setLoading(true);
-      try {
-        const list = await getAllUsersList();
-        setUserList(list);
-      } catch (err) {
-        console.error('Error loading leaderboard:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    loadRankings();
-  }, []);
+export const RankingGlobal: React.FC<RankingGlobalProps> = ({ currentUser }) => {
+  const leaderboard = getStoredLeaderboard();
   
   // Sort by XP descending
-  const sorted = [...userList].sort((a, b) => b.xp - a.xp);
+  const sorted = [...leaderboard].sort((a, b) => b.xp - a.xp);
 
   return (
-    <div className="max-w-7xl mx-auto px-3 sm:px-6 py-4 sm:py-8 space-y-6">
-      <div className="bg-slate-900 border border-slate-800 rounded-3xl p-4 sm:p-7 shadow-xl">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6">
+      <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 sm:p-7 shadow-xl">
         <div className="flex items-center justify-between gap-4 mb-6 pb-4 border-b border-slate-800 flex-wrap">
           <div>
             <div className="flex items-center gap-2">
               <span className="p-2 bg-purple-500/20 text-purple-400 border border-purple-500/30 rounded-xl">
                 <Trophy className="w-5 h-5" />
               </span>
-              <h2 className="text-lg sm:text-2xl font-black text-white">
+              <h2 className="text-xl sm:text-2xl font-black text-white">
                 Rànquing Policial Global (Escala d'Aspirants)
               </h2>
             </div>
@@ -55,20 +32,8 @@ export const RankingGlobal: React.FC<RankingGlobalProps> = ({
             </p>
           </div>
 
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => {
-                AudioEngine.playClick();
-                onOpenActiveUsers?.();
-              }}
-              className="py-2 px-3 bg-emerald-950/60 hover:bg-emerald-900/80 border border-emerald-500/40 text-emerald-300 font-black rounded-xl text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-sm"
-            >
-              <Radio className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
-              <span>Opositors Actius & Cerca</span>
-            </button>
-            <div className="text-xs font-bold text-slate-400 px-3 py-2 bg-slate-800 rounded-xl border border-slate-700">
-              {sorted.length} Opositors
-            </div>
+          <div className="text-xs font-bold text-slate-400 px-3 py-1.5 bg-slate-800 rounded-xl border border-slate-700">
+            {sorted.length} Opositors actius
           </div>
         </div>
 
@@ -89,8 +54,6 @@ export const RankingGlobal: React.FC<RankingGlobalProps> = ({
               borderColor = "border-amber-700/60";
             }
 
-            const isOnline = player.isOnline === true || (player.lastActive && (Date.now() - player.lastActive) < 30 * 60 * 1000);
-
             return (
               <div
                 key={player.uid}
@@ -102,9 +65,6 @@ export const RankingGlobal: React.FC<RankingGlobalProps> = ({
 
                 <div className="relative mb-2">
                   <ShieldRenderer shieldId={player.equippedShieldId} size={54} glow={idx === 0} />
-                  {isOnline && (
-                    <span className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-emerald-500 border-2 border-slate-950" title="En línia" />
-                  )}
                 </div>
 
                 <h4 className="text-sm font-extrabold text-white truncate max-w-full">
@@ -124,43 +84,27 @@ export const RankingGlobal: React.FC<RankingGlobalProps> = ({
                     <b className="text-amber-400 font-mono">{player.merits.toLocaleString()}</b>
                   </div>
                 </div>
-
-                {player.uid !== currentUser.uid && onChallengePlayer && (
-                  <button
-                    onClick={() => {
-                      AudioEngine.playClick();
-                      onChallengePlayer(player);
-                    }}
-                    className="mt-3 w-full py-1.5 px-2 bg-sky-600/80 hover:bg-sky-500 text-white rounded-xl text-xs font-black flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 transition-transform"
-                  >
-                    <Swords className="w-3 h-3" />
-                    <span>Reptar 1v1</span>
-                  </button>
-                )}
               </div>
             );
           })}
         </div>
 
         {/* Full Table */}
-        <div className="overflow-x-auto no-scrollbar">
+        <div className="overflow-x-auto">
           <table className="w-full text-left text-xs text-slate-300">
             <thead className="bg-slate-800/80 text-slate-400 font-bold uppercase tracking-wider text-[10px]">
               <tr>
-                <th className="p-3">Posició</th>
-                <th className="p-3">Aspirant / Agent</th>
-                <th className="p-3">Estat</th>
-                <th className="p-3">Ranger Policial</th>
-                <th className="p-3">Escut</th>
-                <th className="p-3 text-right">Punts XP</th>
-                <th className="p-3 text-right">Mèrits</th>
-                <th className="p-3 text-center">Acció</th>
+                <th className="p-3.5">Posició</th>
+                <th className="p-3.5">Aspirant / Agent</th>
+                <th className="p-3.5">Ranger Policial</th>
+                <th className="p-3.5">Escut Actiu</th>
+                <th className="p-3.5 text-right">Punts XP</th>
+                <th className="p-3.5 text-right">Mèrits</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800">
               {sorted.map((player, pIdx) => {
                 const isCurrent = player.uid === currentUser.uid;
-                const isOnline = player.isOnline === true || (player.lastActive && (Date.now() - player.lastActive) < 30 * 60 * 1000);
 
                 return (
                   <tr 
@@ -171,7 +115,7 @@ export const RankingGlobal: React.FC<RankingGlobalProps> = ({
                         : 'hover:bg-slate-800/40'
                     }`}
                   >
-                    <td className="p-3 font-mono font-bold">
+                    <td className="p-3.5 font-mono font-bold">
                       <span className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-xs ${
                         pIdx === 0 ? 'bg-amber-500 text-slate-950 font-black' :
                         pIdx === 1 ? 'bg-slate-300 text-slate-950 font-black' :
@@ -181,71 +125,36 @@ export const RankingGlobal: React.FC<RankingGlobalProps> = ({
                       </span>
                     </td>
 
-                    <td className="p-3 font-extrabold flex items-center gap-2.5">
+                    <td className="p-3.5 font-extrabold flex items-center gap-2.5">
                       {player.photoURL ? (
                         <img src={player.photoURL} alt="" className="w-7 h-7 rounded-full object-cover border border-slate-700" />
                       ) : (
                         <span className="w-7 h-7 rounded-full bg-slate-800 flex items-center justify-center text-xs">👮</span>
                       )}
-                      <div>
-                        <span>{player.displayName}</span>
-                        {isCurrent && (
-                          <span className="ml-1.5 text-[9px] bg-amber-500 text-slate-950 px-1.5 py-0.2 rounded font-black uppercase">
-                            TU
-                          </span>
-                        )}
-                        {player.email && (
-                          <span className="block text-[10px] text-slate-500 font-normal truncate max-w-[140px]">
-                            {player.email}
-                          </span>
-                        )}
-                      </div>
-                    </td>
-
-                    <td className="p-3">
-                      {isOnline ? (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-black text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/30">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                          En línia
-                        </span>
-                      ) : (
-                        <span className="text-[10px] text-slate-500">
-                          Inactiu
+                      <span>{player.displayName}</span>
+                      {isCurrent && (
+                        <span className="text-[9px] bg-amber-500 text-slate-950 px-1.5 py-0.2 rounded font-black uppercase">
+                          TU
                         </span>
                       )}
                     </td>
 
-                    <td className="p-3">
+                    <td className="p-3.5">
                       <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-slate-800 text-sky-300 border border-slate-700">
                         {player.rank.name}
                       </span>
                     </td>
 
-                    <td className="p-3">
+                    <td className="p-3.5">
                       <ShieldRenderer shieldId={player.equippedShieldId} size={28} />
                     </td>
 
-                    <td className="p-3 text-right font-mono font-bold text-white text-sm">
+                    <td className="p-3.5 text-right font-mono font-bold text-white text-sm">
                       {player.xp.toLocaleString()}
                     </td>
 
-                    <td className="p-3 text-right font-mono font-bold text-amber-400">
+                    <td className="p-3.5 text-right font-mono font-bold text-amber-400">
                       {player.merits.toLocaleString()}
-                    </td>
-
-                    <td className="p-3 text-center">
-                      {!isCurrent && onChallengePlayer && (
-                        <button
-                          onClick={() => {
-                            AudioEngine.playClick();
-                            onChallengePlayer(player);
-                          }}
-                          className="py-1 px-2.5 bg-sky-600/80 hover:bg-sky-500 text-white rounded-lg text-xs font-black flex items-center gap-1 mx-auto cursor-pointer"
-                        >
-                          <Swords className="w-3 h-3" />
-                          <span>1v1</span>
-                        </button>
-                      )}
                     </td>
                   </tr>
                 );
@@ -257,4 +166,3 @@ export const RankingGlobal: React.FC<RankingGlobalProps> = ({
     </div>
   );
 };
-

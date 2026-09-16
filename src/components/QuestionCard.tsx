@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Question } from '../types';
+import { Question, ReviewConceptItem } from '../types';
+import { ConceptReviewCard } from './ConceptReviewCard';
 import { 
   CheckCircle2, 
   XCircle, 
@@ -7,7 +8,7 @@ import {
   BookmarkCheck, 
   AlertTriangle, 
   BookOpen, 
-  Sparkles,
+  Sparkles, 
   ArrowRight,
   ShieldCheck
 } from 'lucide-react';
@@ -41,6 +42,31 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({
   };
 
   const optionLetters = ['A', 'B', 'C', 'D'];
+
+  // Construct fallback or custom Quadre per memoritzar if not defined on question
+  const reviewCardData = question.quadreMemoritzar || {
+    titol: question.seccio || 'Conceptes clau de la Guia d\'estudi',
+    items: [
+      {
+        concepte: `Opció Correcta: ${question.opcions[question.resposta]}`,
+        detall: question.explicacio,
+        color: 'blue' as const
+      },
+      ...(question.clauTribunal ? [{
+        concepte: 'Atenció al parany d\'examen',
+        detall: question.clauTribunal,
+        color: 'red' as const
+      }] : []),
+      ...(question.guiaTema ? [{
+        concepte: `Referència oficial (${question.guiaTema})`,
+        detall: `Pàgina oficial: ${question.guiaPagina || 'Guia d\'estudi 2026'}. Memoritzar els termes exactes.`,
+        color: 'green' as const
+      }] : [])
+    ],
+    reglaExamen: question.clauTribunal 
+      ? question.clauTribunal 
+      : `Revisa sempre que ${question.opcions[question.resposta]} coincideixi literalment amb la Guia Oficial.`
+  };
 
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 sm:p-7 shadow-xl">
@@ -160,6 +186,15 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({
               "{question.explicacio}"
             </p>
           </div>
+
+          {/* Quick Review Card matching screenshot (Quadre per memoritzar) */}
+          <ConceptReviewCard
+            titol={reviewCardData.titol}
+            items={reviewCardData.items}
+            reglaExamen={reviewCardData.reglaExamen}
+            isSaved={isSaved}
+            onSaveToggle={onSaveToggle ? () => onSaveToggle(question.id) : undefined}
+          />
 
           {/* Tribunal Trap Alert if available */}
           {question.clauTribunal && (

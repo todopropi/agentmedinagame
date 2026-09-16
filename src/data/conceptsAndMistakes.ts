@@ -19,26 +19,27 @@ export const CONFUSION_CONCEPTS: ConfusionConcept[] = [
   {
     id: 'conf_tc_vs_tcomptes',
     titol: 'Tribunal Constitucional vs. Tribunal de Comptes',
-    ambit: 'Àmbit B (Institucional)',
+    ambit: 'Àmbit B (Institucional - Guia Oficial 2026)',
     concepteA: {
       nom: 'Tribunal Constitucional (Art. 159 CE)',
       caracteristiques: [
-        'Intèrpret suprem de la Constitució.',
+        'Intèrpret suprem de la Constitució (jurisdicció a tot el territori nacional).',
         'Independent de tots els poders de l\'Estat (NO forma part del Poder Judicial).',
-        '12 magistrats nomenats pel Rei per 9 anys (es renoven per terços cada 3 anys).',
-        'Resol Recursos i Qüestions d\'Inconstitucionalitat, i Recurs d\'Empara (arts. 14 a 29 i 30.2).'
+        '12 membres anomenats pel Rei a proposta de: 4 Congrés (3/5), 4 Senat (3/5), 2 Govern, 2 CGPJ.',
+        'Mandat de 9 anys, es renoven per terços cada 3 anys.',
+        'Competències: Recursos i Qüestions d\'inconstitucionalitat, recurs d\'empara (arts. 14 a 29 i 30.2 CE).'
       ],
-      trampaExamen: 'El tribunal sol preguntar si pertany al Poder Judicial. Alerta: NO està integrat en el Poder Judicial!'
+      trampaExamen: 'El tribunal sovint pregunta si és un òrgan del Poder Judicial. Alerta: El TC NO forma part del Poder Judicial!'
     },
     concepteB: {
       nom: 'Tribunal de Comptes (Art. 136 CE)',
       caracteristiques: [
         'Suprem òrgan fiscalitzador dels comptes i gestió econòmica de l\'Estat i sector públic.',
-        'Depèn directament de les Corts Generals.',
+        'Depèn directament de les Corts Generals i exerceix les seves funcions per delegació d\'aquestes.',
         'Exerceix jurisdicció pròpia sobre responsabilitat comptable de qui gestiona fons públics.',
-        'A Catalunya, l\'òrgan equivalent és la Sindicatura de Comptes (7 síndics elegits per 3/5 del Parlament).'
+        'A Catalunya, l\'òrgan equivalent és la Sindicatura de Comptes (7 síndics elegits per 3/5 del Parlament per 6 anys).'
       ],
-      trampaExamen: 'No confonguis jutjar delictes generals amb exigir responsabilitat exclusivament comptable/financera.'
+      trampaExamen: 'No confonguis jutjar delictes ordinaris amb jutjar la gestió econòmica i responsabilitat comptable.'
     },
     reglaMnemotecnica: 'TC = Drets, Lleis i Constitució (12 membres, 9 anys). T. Comptes = DÉU DEL DINER (Fiscalització i pressupostos).'
   },
@@ -51,18 +52,19 @@ export const CONFUSION_CONCEPTS: ConfusionConcept[] = [
       caracteristiques: [
         'S\'associa estrictament als aspectes tècnics i operacionals.',
         'Eines: tallafocs (firewalls), antivirus, pegats de seguretat, sistemes operatius, xarxes.',
-        'Enfocament tàctic d\'infraestructura.'
+        'Enfocament tàctic d\'infraestructura i sistemes de computació.'
       ],
-      trampaExamen: 'Pregunta d\'examen literal (2021): "A diferència de la seguretat de la informació, la seguretat informàtica s\'associa a aspectes tècnics i operacionals".'
+      trampaExamen: 'Pregunta d\'examen literal: "A diferència de la seguretat de la informació, la seguretat informàtica s\'associa a aspectes tècnics i operacionals".'
     },
     concepteB: {
       nom: 'Seguretat de la Informació (Estratègica / Governança)',
       caracteristiques: [
         'Es basa en aspectes estratègics i corporatius d\'alt nivell.',
         'Gestió integral de riscos, anàlisi d\'amenaces, plans de continuïtat de negoci i bones pràctiques.',
-        'Garanteix la tríada CID: Confidencialitat, Integritat i Disponibilitat.'
+        'Garanteix tres pilars: Confidencialitat, Integritat i Disponibilitat (CID).',
+        'Inclou formació de personal, processos físics en paper, compliment normatiu (RGPD/LOPD).'
       ],
-      trampaExamen: 'No és un programari; és la política i estratègia corporativa de gestió de les dades.'
+      trampaExamen: 'La seguretat de la informació engloba també suports no digitals (arxius en paper, control d\'accés físic).'
     },
     reglaMnemotecnica: 'Informàtica = CABLE, TÈCNIC I ANTIVIRUS. De la Informació = ESTRATÈGIA, RISCOS I TRÍADA CID.'
   },
@@ -89,7 +91,7 @@ export const CONFUSION_CONCEPTS: ConfusionConcept[] = [
     reglaMnemotecnica: 'Regla B-I-E-S: Bàsica (Mosso, Caporal) ➔ Intermèdia (Sergent, Sotsinspector) ➔ Executiva (Inspector) ➔ Superior (Intendent, Comissari, Major).'
   },
   {
-    "id": 'conf_decret_llei_vs_legislatiu',
+    id: 'conf_decret_llei_vs_legislatiu',
     titol: 'Decret Llei (Art. 86 CE) vs. Decret Legislatiu (Art. 82 CE)',
     ambit: 'Àmbit B (Ordenament Jurídic)',
     concepteA: {
@@ -151,43 +153,184 @@ export const CONFUSION_CONCEPTS: ConfusionConcept[] = [
       nom: 'Robatori amb Força en les Coses (Art. 238 CP)',
       caracteristiques: [
         'Empra algun dels mitjans taxats: escalament, trencament de paret o sostre, fractura de portes/finestres, claus falses o desactivació d\'alarmes.',
-        'Sempre és delicte més greu, independentment del valor dels béns sostrets.'
+        'Sempre és delicte més greu, independentment del valor dels béns sostrets (fins i tot per sota de 400 €).'
       ],
       trampaExamen: 'Força NO és empènyer la víctima (això és violència física i seria robatori amb violència Art. 242).'
     },
     reglaMnemotecnica: 'Furt = SENSE trencar res (400€ límit lleu). Robatori amb força = ESCALAR, FRACTURAR o CLAU FALSA (sempre és robatori).'
+  },
+  {
+    id: 'conf_llei_organica_vs_ordinaria',
+    titol: 'Llei Orgànica (Art. 81 CE) vs. Llei Ordinària',
+    ambit: 'Àmbit B (Dret Constitucional - Tema B.1)',
+    concepteA: {
+      nom: 'Llei Orgànica (Art. 81 CE)',
+      caracteristiques: [
+        'Matèries reservades: desenvolupament dels drets fonamentals i llibertats públiques (Secció 1a, Cap. 2n, Títol I), aprovació dels Estatuts d\'Autonomia, règim electoral general i les altres previstes a la CE.',
+        'Aprovació, modificació o derogació: Majoria Absoluta del Congrés en una votació final sobre el conjunt del projecte.'
+      ],
+      trampaExamen: 'Pregunta trampa: S\'exigeix majoria absoluta del Congrés i del Senat? Fals! Només del Congrés dels Diputats!'
+    },
+    concepteB: {
+      nom: 'Llei Ordinària',
+      caracteristiques: [
+        'Regula qualsevol matèria no reservada expressament a Llei Orgànica.',
+        'S\'aprova per Majoria Simple dels membres presents a cadascuna de les cambres (Congrés i Senat).'
+      ],
+      trampaExamen: 'Principi de relació: La LO i la ordinària tenen el mateix rang jeràrquic. Es regeixen pel principi de competència material, no pas jerarquia.'
+    },
+    reglaMnemotecnica: 'LO = Drets Fonamentals + Estatuts + Règim Electoral (Majoria Absoluta del Congrés). Ordinària = La resta (Majoria Simple).'
+  },
+  {
+    id: 'conf_habeas_corpus_terminis',
+    titol: 'Habeas Corpus (LO 6/1984) vs. Detenció Preventiva Ordinària (Art. 17 CE)',
+    ambit: 'Àmbit B / C (Garanties de la Detenció)',
+    concepteA: {
+      nom: 'Detenció Preventiva Ordinària (Art. 17.2 CE)',
+      caracteristiques: [
+        'Termini màxim estricte de 72 hores abans de passar a disposició judicial o ser posat en llibertat.',
+        'Regla d\'or constitucional: la detenció no podrà durar més del temps estrictament necessari per a la realització de les esbrinacions.',
+        'Detenció de menors (LO 5/2000): màxim de 24 hores abans de posar a disposició de la Fiscalia de Menors.'
+      ],
+      trampaExamen: 'No cal esperar 72 hores si les diligències policials ja han finalitzat abans. El límit és el temps estrictament necessari.'
+    },
+    concepteB: {
+      nom: 'Procediment d\'Habeas Corpus (LO 6/1984)',
+      caracteristiques: [
+        'Finalitat: posada a disposició judicial immediata de qui es considera il·legalment detingut.',
+        'Jutge competent: Jutge d\'Instrucció del lloc on es trobi la persona detinguda.',
+        'Termini màxim de resolució del jutge: 24 hores des que es dicta la interlocutòria d\'incoació.',
+        'Legitimats per sol·licitar-lo: el detingut, cònjuge/parella, descendents, ascendents, germans, Defensor del Poble, Ministeri Fiscal i el propi Jutge d\'ofici.'
+      ],
+      trampaExamen: 'Un advocat defensor NO pot sol·licitar Habeas Corpus per si mateix llevat que ho demani en nom del detingut com a representant legítim.'
+    },
+    reglaMnemotecnica: 'Detenció = màx. 72h (adults) / 24h (menors a Fiscalia). Habeas Corpus = Jutge d\'Instrucció resol en 24h.'
+  },
+  {
+    id: 'conf_inviolabilitat_immunitat',
+    titol: 'Inviolabilitat vs. Immunitat dels Parlamentaris (Art. 71 CE / Art. 57 EAC)',
+    ambit: 'Àmbit B (Organització Institucional)',
+    concepteA: {
+      nom: 'Inviolabilitat Parlamentària',
+      caracteristiques: [
+        'Protegeix les opinions manifestades i els vots emesos en l\'exercici de les seves funcions parlamentàries.',
+        'És perpètua: continua tenint efecte fins i tot després d\'haver finalitzat el mandat com a diputat.'
+      ],
+      trampaExamen: 'No protegeix d\'actes o opinions expressades fora de l\'exercici parlamentari (ex: un tuit personal injuriós o una baralla al carrer).'
+    },
+    concepteB: {
+      nom: 'Immunitat Parlamentària',
+      caracteristiques: [
+        'Protecció processal: durant el període del seu mandat, només podran ser detinguts en cas de flagrant delicte.',
+        'No podran ser inculpats ni processats sense la prèvia autorització de la cambra respectiva (suplicatori a les Corts).',
+        'És temporal: només dura mentre estigui en vigor el mandat representatiu.'
+      ],
+      trampaExamen: 'Si hi ha flagrant delicte (comès a la vista dels agents de policia), SÍ que poden ser detinguts immediatament!'
+    },
+    reglaMnemotecnica: 'Inviolabilitat = Opinions i vots (perpètua). Immunitat = Detenció i judici (temporal, excepte flagrant delicte).'
+  },
+  {
+    id: 'conf_alcohol_via_penal_adm',
+    titol: 'Taxes d\'Alcoholèmia: Infracció Administrativa vs. Delicte Penal (Art. 379 CP)',
+    ambit: 'Àmbit C (Seguretat Viària - Guia 2026)',
+    concepteA: {
+      nom: 'Límit Administratiu (RGCir / Llei de Trànsit)',
+      caracteristiques: [
+        'General: > 0,25 mg/l en aire espirat (o > 0,50 g/l en sang).',
+        'Novells (primer any de permís) i Professionals: > 0,15 mg/l aire espirat (o > 0,30 g/l sang).',
+        'Menors d\'edat que condueixen vehicles (patinets elèctrics, ciclomotors): taxa ZERO (0,0 mg/l i 0,0 g/l).'
+      ],
+      trampaExamen: 'Els menors d\'edat tenen taxa 0,0! No s\'aplica la taxa novell de 0,15 als menors.'
+    },
+    concepteB: {
+      nom: 'Delicte Penal contra la Seguretat Viària (Art. 379.2 CP)',
+      caracteristiques: [
+        'Taxa taxada objectiva penal: superar 0,60 mg/l en aire espirat (o 1,20 g/l en sang).',
+        'Sempre és delicte si se supera aquesta taxa, sense necessitat de demostrar que la conducció estava alterada o en ziga-zaga.',
+        'També és delicte amb taxes inferiors si s\'acredita la influència de l\'alcohol en la conducció.'
+      ],
+      trampaExamen: 'Recorda la negativa a sotmetre\'s a les proves (Art. 383 CP): pena de presó de 6 mesos a 1 any i privació de conduir d\'1 a 4 anys.'
+    },
+    reglaMnemotecnica: '0,25 general | 0,15 novell/pro | 0,0 menors. Si passa de 0,60 mg/l = FISCALIA I PENAL DIRECTE!'
+  },
+  {
+    id: 'conf_armes_categoria_1_2',
+    titol: 'Reglament d\'Armes (RD 137/1993): 1a Categoria vs. 2a Categoria',
+    ambit: 'Àmbit C (Armes i Seguretat Ciutadana)',
+    concepteA: {
+      nom: '1a Categoria (Armes de Foc Curtes)',
+      caracteristiques: [
+        'Pistoles i revòlvers.',
+        'Armes curtes de foc concebudes per ser empunyades amb una sola mà.',
+        'Llicència necessària per a particulars: Llicència B (estrictament justificada per motius de defensa personal).'
+      ],
+      trampaExamen: 'L\'arma reglamentària del cos de Mossos d\'Esquadra és arma curta de 1a categoria (guia de pertinença A).'
+    },
+    concepteB: {
+      nom: '2a Categoria (Armes de Foc Llargues)',
+      caracteristiques: [
+        '2a.1: Armes de foc llargues per a vigilància i guarderia (escopetes de canons de 60 cm o més, pistoles de senyals). Llicència C.',
+        '2a.2: Armes de foc llargues ratllades per a caça major (rifles, carrabines de canó estriat). Llicència D.'
+      ],
+      trampaExamen: 'Les escopetes de caça menor són de 3a categoria (Llicència E), no pas de 2a categoria!'
+    },
+    reglaMnemotecnica: '1a Cat = Curtes (Pistola/Revòlver). 2a Cat = Llargues ratllades (Rifle) / vigilància. 3a Cat = Escopetes lises de caça.'
   }
 ];
 
 export const MNEMONIC_CARDS = [
   {
-    titol: '🏛️ B-I-E-S: Escales Policials dels Mossos',
+    id: 'mnemo_1',
+    titol: '🏛️ B-I-E-S: Les 4 Escales del Cos de Mossos d\'Esquadra (Llei 10/1994)',
     regla: 'Bàsica ➔ Intermèdia ➔ Executiva ➔ Superior',
-    detall: 'Mosso & Caporal (Bàsica) | Sergent & Sotsinspector (Intermèdia) | Inspector (Executiva) | Intendent, Comissari & Major (Superior).'
+    detall: '1. Bàsica: Mosso/a i Caporal/a. | 2. Intermèdia: Sergent/a i Sotsinspector/a. | 3. Executiva: Inspector/a. | 4. Superior: Intendent/a, Comissari/a i Major.'
   },
   {
-    titol: '⏱️ 72h - 24h - 48h: Terminis de Detenció i Garanties',
+    id: 'mnemo_2',
+    titol: '⏱️ 72h - 24h - 48h: La Trilogia de Terminis de Detenció (CE i LECrim)',
     regla: '72h (Ordinari) · 24h (Menors i Habeas Corpus) · +48h (Pròrroga Terrorisme)',
-    detall: 'Detenció ordinària màx. 72h (Art. 17.2 CE). Menors màx. 24h a Fiscalia. Habeas corpus resolt en 24h. Terrorisme fins a 5 dies (72h + 48h judicial).'
+    detall: 'Detenció ordinària màx. 72h (Art. 17.2 CE). Menors màx. 24h a Fiscalia de Menors (LO 5/2000). El Jutge resol l\'Habeas Corpus en 24h. Terrorisme fins a 5 dies totals (72h + 48h pròrroga judicial).'
   },
   {
-    titol: '🏢 D-À-U-G: Nivells Organitzatius dels Mossos',
+    id: 'mnemo_3',
+    titol: '🏢 D-À-U-G: Organització Estructural dels Mossos d\'Esquadra',
     regla: 'Divisió > Àrea > Unitat > Grup',
-    detall: 'El Grup sempre s\'adscriu a una Unitat. L\'Àrea agrupa diverses Unitats. La Divisió coordina diverses Àrees centrals.'
+    detall: 'Estructura descendent oficial: Divisió (comandada per Comissari/Intendent) ➔ Àrea (Intendent/Inspector) ➔ Unitat (Sotsinspector/Sergent) ➔ Grup (Caporal/Mosso). L\'Escamot/Patrulla s\'integra dins el Grup.'
   },
   {
-    titol: '🗳️ 135 - 350 - 705: Diputats per Cambra',
+    id: 'mnemo_4',
+    titol: '🗳️ 135 - 350 - 705: Escapulari de Diputats i Cambres Oficials',
     regla: '135 (Parlament de Catalunya) · 350 (Congrés dels Diputats) · 705 (Parlament Europeu)',
-    detall: 'Barcelona (85), Tarragona (18), Girona (17), Lleida (15) = 135 al Parlament de Catalunya.'
+    detall: 'Parlament de Catalunya: Barcelona 85, Tarragona 18, Girona 17, Lleida 15 (Total 135). Congrés dels Diputats: mínim 300 màxim 400 (fixat en 350 per la LOREG).'
   },
   {
-    titol: '📜 C-I-D: La Tríada de Seguretat de la Informació',
+    id: 'mnemo_5',
+    titol: '📜 C-I-D: Els 3 Pilars de la Seguretat de la Informació (Guia Tema A.7)',
     regla: 'Confidencialitat · Integritat · Disponibilitat',
-    detall: 'Confidencialitat: només autoritzats. Integritat: informació exacta sense alteració. Disponibilitat: accessible quan cal.'
+    detall: 'Confidencialitat: accés exclusiu a persones autoritzades. Integritat: la informació roman fidel, exacta i sense alteracions fraudulentes. Disponibilitat: accessible quan es requereix pels usuaris autoritzats.'
   },
   {
-    titol: '🍺 Factor x2: Taxes d\'Alcoholèmia',
-    regla: 'Aire espirat x 2 = Sang',
-    detall: 'General: 0,25 mg/l aire = 0,50 g/l sang. Novell/Professional: 0,15 mg/l aire = 0,30 g/l sang. Penal: >0,60 mg/l aire = >1,20 g/l sang.'
+    id: 'mnemo_6',
+    titol: '🍺 Factor x2: Conversió de Taxes d\'Alcoholèmia (RGCir / CP)',
+    regla: 'Aire espirat (mg/l) x 2 = Sang (g/l)',
+    detall: 'General: 0,25 mg/l aire = 0,50 g/l sang. Novell/Professional: 0,15 mg/l aire = 0,30 g/l sang. Taxa zero (0,0) per a menors. Penal objectiu: >0,60 mg/l aire = >1,20 g/l sang.'
+  },
+  {
+    id: 'mnemo_7',
+    titol: '⚖️ 3/5 - 2/3: Majories Qualificades del Parlament de Catalunya',
+    regla: '3/5: Síndic de Greuges, Sindicatura de Comptes, CAC | 2/3: Reforma de l\'Estatut (EAC)',
+    detall: 'Per elegir el Síndic de Greuges i els 7 membres de la Sindicatura de Comptes calen 3/5 dels diputats (81 diputats). Per aprovar la proposta de reforma de l\'Estatut calen 2/3 (90 diputats).'
+  },
+  {
+    id: 'mnemo_8',
+    titol: '🇪🇺 27 - 1957 - 1986: Dates Clau de la Unió Europea',
+    regla: '27 Estats membres · 1957 (Tractat de Roma) · 1986 (Adhesió d\'Espanya)',
+    detall: 'El Tractat de Roma (1957) va crear la CEE i l\'EURATOM. Espanya i Portugal van ingressar l\'1 de gener de 1986. El Tractat de Maastricht (1992) va crear oficialment la Unió Europea.'
+  },
+  {
+    id: 'mnemo_9',
+    titol: '🛡️ 3 Pilars de Policia Judicial (Art. 126 CE / LO 2/1986)',
+    regla: 'Dependència Orgànica (Departament d\'Interior) vs. Funcional (Jutges i Fiscals)',
+    detall: 'Orgànicament la Policia Judicial depèn de la Generalitat / Ministeri. Funcionalment depèn exclusivament dels Jutges, Tribunals i Ministeri Fiscal quan investiga delictes, sense que ningú pugui interferir.'
   }
 ];
