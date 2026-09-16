@@ -43,6 +43,56 @@ interface ModeDuelsProps {
   onSaveQuestionToggle: (questionId: string) => void;
 }
 
+export type BotDifficulty = 'aspirant' | 'caporal' | 'sergent';
+
+export interface BotProfileConfig {
+  id: string;
+  difficulty: BotDifficulty;
+  name: string;
+  role: string;
+  avatar: string;
+  shieldId: string;
+  accuracy: number; // probability 0..1
+  badge: string;
+  color: string;
+}
+
+export const POLICE_BOTS: Record<BotDifficulty, BotProfileConfig> = {
+  aspirant: {
+    id: 'bot_aspirant_ia',
+    difficulty: 'aspirant',
+    name: 'Aspirant (IA)',
+    role: 'Nivell fàcil. Falla sovint: ideal per agafar ritme i encadenar ratlles.',
+    avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80',
+    shieldId: 'escut_basico',
+    accuracy: 0.45, // 45% encert
+    badge: '🎓',
+    color: 'border-slate-800 hover:border-amber-500/40 text-slate-200 bg-slate-900/60'
+  },
+  caporal: {
+    id: 'bot_caporal_ia',
+    difficulty: 'caporal',
+    name: 'Caporal (IA)',
+    role: 'Nivell mitjà. Domina el temari bàsic i aprofita els teus errors.',
+    avatar: 'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?auto=format&fit=crop&w=150&q=80',
+    shieldId: 'escut_brimo',
+    accuracy: 0.68, // 68% encert
+    badge: '👮',
+    color: 'border-slate-800 hover:border-amber-500/40 text-slate-200 bg-slate-900/60'
+  },
+  sergent: {
+    id: 'bot_sergent_ia',
+    difficulty: 'sergent',
+    name: 'Sergent (IA)',
+    role: 'Nivell dur. Molt poques errades: hauràs de ser quirúrgic per guanyar-lo.',
+    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&q=80',
+    shieldId: 'escut_gei',
+    accuracy: 0.85, // 85% encert
+    badge: '🎖️',
+    color: 'border-slate-800 hover:border-amber-500/40 text-slate-200 bg-slate-900/60'
+  }
+};
+
 interface WheelSector {
   label: string;
   topicIndex: number; // -1 for Ratlla
@@ -72,6 +122,7 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
   
   // Modals
   const [showNewMatchModal, setShowNewMatchModal] = useState(false);
+  const [showBotDifficultyModal, setShowBotDifficultyModal] = useState(false);
   const [newRivalAlias, setNewRivalAlias] = useState('');
   const [showTurnPassedModal, setShowTurnPassedModal] = useState(false);
   const [joinCodeInput, setJoinCodeInput] = useState('');
@@ -387,26 +438,22 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
     }
   };
 
-  // Start instant practice match against AI Bot
-  const handleStartBotPractice = async () => {
+  // Start instant practice match against AI Bot with selected difficulty
+  const handleStartBotPractice = async (difficulty: BotDifficulty = 'caporal') => {
     AudioEngine.playClick();
+    const bot = POLICE_BOTS[difficulty];
     const newGame = await createDuelGame(user);
-    const botOpponent = {
-      uid: 'bot_caporal_ia',
-      displayName: 'Caporal_IA (Bot Formador)',
-      photoURL: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80',
-      equippedShieldId: 'escut_brimo'
-    };
     const joined = await joinDuelGame(newGame.shareCode, {
       ...user,
-      uid: botOpponent.uid,
-      displayName: botOpponent.displayName,
-      photoURL: botOpponent.photoURL,
-      equippedShieldId: botOpponent.equippedShieldId
+      uid: bot.id,
+      displayName: bot.name,
+      photoURL: bot.avatar,
+      equippedShieldId: bot.shieldId
     } as any);
 
     if (joined) {
       setActiveGame(joined);
+      setShowNewMatchModal(false);
       await loadDuelsData();
     }
   };
@@ -432,72 +479,109 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
 
   // Trigger Bot IA Turn execution when rival is a bot and it's their turn
   const [isBotThinking, setIsBotThinking] = useState(false);
-  const isRivalBot = activeGame && (
-    activeGame.currentTurnUid.startsWith('bot_') || 
-    activeGame.guestPlayerUid?.startsWith('bot_') ||
-    activeGame.hostPlayerUid.startsWith('bot_')
+  const botTurnTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const isRivalBot = Boolean(
+    activeGame && (
+      activeGame.currentTurnUid.startsWith('bot_') || 
+      activeGame.guestPlayerUid?.startsWith('bot_') ||
+      activeGame.hostPlayerUid.startsWith('bot_')
+    )
   );
 
-  const simulateBotTurn = async () => {
+  // Determine which bot is playing to fetch its accurate accuracy
+  const currentBotProfile = (() => {
+    if (!activeGame) return POLICE_BOTS.caporal;
+    const botUid = activeGame.guestPlayerUid?.startsWith('bot_') 
+      ? activeGame.guestPlayerUid 
+      : activeGame.hostPlayerUid.startsWith('bot_') 
+        ? activeGame.hostPlayerUid 
+        : activeGame.currentTurnUid;
+    
+    if (botUid.includes('aspirant')) return POLICE_BOTS.aspirant;
+    if (botUid.includes('sergent')) return POLICE_BOTS.sergent;
+    return POLICE_BOTS.caporal;
+  })();
+
+  const simulateBotTurn = () => {
     if (!activeGame || isBotThinking || activeGame.currentTurnUid === user.uid || activeGame.status !== 'active') return;
     setIsBotThinking(true);
     AudioEngine.playWheelTick();
 
-    // Bot simulates turn with a realistic delay
-    setTimeout(async () => {
-      const isBotHost = activeGame.hostPlayerUid === activeGame.currentTurnUid;
-      let botStripes = isBotHost ? activeGame.hostRedStripes : activeGame.guestRedStripes;
-      let botStreak = (activeGame.consecutiveCorrect && activeGame.consecutiveCorrect[activeGame.currentTurnUid]) || 0;
+    if (botTurnTimeoutRef.current) {
+      clearTimeout(botTurnTimeoutRef.current);
+    }
 
-      // Realistic bot accuracy: ~70% correct
-      const botAnswersCorrectly = Math.random() < 0.70;
+    // Bot simulates turn completely locally without any external dependencies
+    botTurnTimeoutRef.current = setTimeout(async () => {
+      try {
+        const isBotHost = activeGame.hostPlayerUid === activeGame.currentTurnUid;
+        let botStripes = isBotHost ? activeGame.hostRedStripes : activeGame.guestRedStripes;
+        let botStreak = (activeGame.consecutiveCorrect && activeGame.consecutiveCorrect[activeGame.currentTurnUid]) || 0;
 
-      if (botAnswersCorrectly) {
-        botStreak += 1;
-        // If streak reached 3 or lucky ratlla -> bot gets a red stripe!
-        if (botStreak >= 3 || Math.random() < 0.35) {
-          botStripes = Math.min(4, botStripes + 1);
-          botStreak = 0;
+        // Dynamic accuracy based on police difficulty level
+        const accuracy = currentBotProfile.accuracy;
+        const botAnswersCorrectly = Math.random() < accuracy;
+
+        if (botAnswersCorrectly) {
+          botStreak += 1;
+          // If streak reached 3 or lucky ratlla question -> bot gets a red stripe!
+          const earnedStripe = botStreak >= 3 || Math.random() < 0.35;
+          if (earnedStripe) {
+            botStripes = Math.min(4, botStripes + 1);
+            botStreak = 0;
+          }
+
+          const isBotWinner = botStripes >= 4;
+          const updatedGame: DuelGame = {
+            ...activeGame,
+            hostRedStripes: isBotHost ? botStripes : activeGame.hostRedStripes,
+            guestRedStripes: !isBotHost ? botStripes : activeGame.guestRedStripes,
+            consecutiveCorrect: {
+              ...activeGame.consecutiveCorrect,
+              [activeGame.currentTurnUid]: botStreak
+            },
+            status: isBotWinner ? 'finished' : 'active',
+            winnerUid: isBotWinner ? activeGame.currentTurnUid : undefined,
+            // If bot completed its turn or won, give turn back to user if game active
+            currentTurnUid: isBotWinner ? activeGame.currentTurnUid : user.uid,
+            lastUpdated: Date.now()
+          };
+
+          await saveDuelGameUpdate(updatedGame);
+          setActiveGame(updatedGame);
+          await loadDuelsData();
+        } else {
+          // Bot fails answer -> turn immediately returns to user!
+          const updatedGame: DuelGame = {
+            ...activeGame,
+            currentTurnUid: user.uid,
+            consecutiveCorrect: {
+              ...activeGame.consecutiveCorrect,
+              [activeGame.currentTurnUid]: 0
+            },
+            lastUpdated: Date.now()
+          };
+
+          await saveDuelGameUpdate(updatedGame);
+          setActiveGame(updatedGame);
+          await loadDuelsData();
         }
-
-        const isBotWinner = botStripes >= 4;
-        const updatedGame: DuelGame = {
-          ...activeGame,
-          hostRedStripes: isBotHost ? botStripes : activeGame.hostRedStripes,
-          guestRedStripes: !isBotHost ? botStripes : activeGame.guestRedStripes,
-          consecutiveCorrect: {
-            ...activeGame.consecutiveCorrect,
-            [activeGame.currentTurnUid]: botStreak
-          },
-          status: isBotWinner ? 'finished' : 'active',
-          winnerUid: isBotWinner ? activeGame.currentTurnUid : undefined,
-          // If bot missed streak, it passes turn back to player
-          currentTurnUid: isBotWinner ? activeGame.currentTurnUid : user.uid,
-          lastUpdated: Date.now()
-        };
-
-        await saveDuelGameUpdate(updatedGame);
-        setActiveGame(updatedGame);
-        await loadDuelsData();
-      } else {
-        // Bot fails answer -> turn immediately returns to user!
-        const updatedGame: DuelGame = {
-          ...activeGame,
-          currentTurnUid: user.uid,
-          consecutiveCorrect: {
-            ...activeGame.consecutiveCorrect,
-            [activeGame.currentTurnUid]: 0
-          },
-          lastUpdated: Date.now()
-        };
-
-        await saveDuelGameUpdate(updatedGame);
-        setActiveGame(updatedGame);
-        await loadDuelsData();
+      } catch (err) {
+        console.warn('Bot turn local fallback handled:', err);
+      } finally {
+        setIsBotThinking(false);
       }
-      setIsBotThinking(false);
-    }, 2400);
+    }, 1800);
   };
+
+  useEffect(() => {
+    return () => {
+      if (botTurnTimeoutRef.current) {
+        clearTimeout(botTurnTimeoutRef.current);
+      }
+    };
+  }, []);
 
   // Check if bot should take turn
   useEffect(() => {
@@ -582,7 +666,10 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
             </button>
 
             <button
-              onClick={handleStartBotPractice}
+              onClick={() => {
+                AudioEngine.playClick();
+                setShowBotDifficultyModal(true);
+              }}
               className="flex-1 sm:flex-initial py-2.5 px-3 bg-slate-800 hover:bg-slate-700 text-amber-300 font-extrabold rounded-xl text-xs sm:text-sm border border-amber-500/30 flex items-center justify-center gap-1.5 active:scale-95 transition-transform cursor-pointer min-h-[44px]"
             >
               <Bot className="w-4 h-4 text-amber-400" />
@@ -664,16 +751,22 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
 
               {/* VS Center Pillar */}
               <div className="flex flex-col items-center text-center">
-                <div className="w-9 h-9 rounded-full bg-amber-500/20 border border-amber-500/40 flex items-center justify-center font-black text-amber-400 text-sm">
+                <div className="w-9 h-9 rounded-full bg-amber-500/20 border border-amber-500/40 flex items-center justify-center font-black text-amber-400 text-sm shadow-inner">
                   VS
                 </div>
-                <div className="mt-2 text-[10px] font-bold text-slate-400">
+                <div className="mt-2 text-[10px] font-extrabold tracking-wide">
                   {activeGame.status === 'finished' ? (
-                    <span className="text-amber-400 font-black">FINALITZAT</span>
+                    <span className="px-2 py-0.5 rounded bg-slate-800 text-amber-400 border border-amber-500/40">FINALITZAT</span>
                   ) : isMyTurn ? (
-                    <span className="text-emerald-400 font-black">EL TEU TORN!</span>
+                    <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 flex items-center gap-1 animate-pulse">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                      ET TOCA JUGAR
+                    </span>
                   ) : (
-                    <span className="text-amber-400 font-black">TORN DEL RIVAL</span>
+                    <span className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/40 flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                      ESPERANT QUE JUGUI EL TEU RIVAL
+                    </span>
                   )}
                 </div>
               </div>
@@ -941,7 +1034,7 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-black text-white flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                <span>EL TEU TORN EN EL DUEL ({myTurnGames.length})</span>
+                <span>ET TOCA JUGAR ({myTurnGames.length})</span>
               </h3>
             </div>
 
@@ -973,8 +1066,8 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
                         <div>
                           <div className="flex items-center gap-2">
                             <span className="text-xs font-black text-white truncate max-w-[130px]">{rName}</span>
-                            <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400">
-                              EL TEU TORN
+                            <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                              Et toca jugar
                             </span>
                           </div>
                           <div className="text-[11px] text-slate-400 flex items-center gap-2 mt-0.5">
@@ -999,7 +1092,7 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
           <div className="space-y-3">
             <h3 className="text-sm font-black text-slate-400 flex items-center gap-2">
               <Clock className="w-4 h-4 text-amber-400" />
-              <span>TORN DEL RIVAL ({rivalTurnGames.length})</span>
+              <span>ESPERANT QUE JUGUI EL TEU RIVAL ({rivalTurnGames.length})</span>
             </h3>
 
             {rivalTurnGames.length === 0 ? (
@@ -1034,7 +1127,7 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
                       </div>
 
                       <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-800 text-amber-400 border border-slate-700">
-                        Pendent Rival
+                        Esperant que jugui el teu rival
                       </span>
                     </div>
                   );
@@ -1045,63 +1138,89 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
 
           {/* RETAR OPOSITORS (ONLINE / REGISTRATS) */}
           <div className="space-y-3 pt-2">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <h3 className="text-sm font-black text-white flex items-center gap-2">
                 <Users className="w-4 h-4 text-sky-400" />
-                <span>RETAR OPOSITORS REGISTRATS I EN LÍNIA</span>
+                <span>RETAR OPOSITORS (EN LÍNIA I REGISTRATS)</span>
               </h3>
-              <span className="text-[11px] font-bold text-slate-400">
-                {registeredUsers.filter(u => u.isOnline).length} en línia
-              </span>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-              {registeredUsers.slice(0, 6).map((target) => (
-                <div
-                  key={target.uid}
-                  className="p-3 bg-slate-900/80 hover:bg-slate-900 border border-slate-800 hover:border-slate-700 rounded-2xl flex items-center justify-between gap-2.5 transition-all shadow-md"
+              
+              <div className="flex items-center bg-slate-950 rounded-xl p-0.5 border border-slate-800 text-[11px] font-bold">
+                <button
+                  onClick={() => setUserFilterTab('all')}
+                  className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                    userFilterTab === 'all' ? 'bg-sky-500 text-white shadow' : 'text-slate-400 hover:text-slate-200'
+                  }`}
                 >
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <div className="relative shrink-0">
-                      <img 
-                        src={target.photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${target.uid}`} 
-                        alt={target.displayName}
-                        className="w-9 h-9 rounded-full border border-slate-700 object-cover bg-slate-800"
-                        referrerPolicy="no-referrer"
-                      />
-                      <span 
-                        className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-slate-950 ${
-                          target.isOnline ? 'bg-emerald-500' : 'bg-slate-500'
-                        }`}
-                        title={target.isOnline ? 'En línia' : 'Desconnectat'}
-                      />
-                    </div>
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-xs font-black text-white truncate max-w-[110px]">{target.displayName}</span>
-                        {target.isOnline && (
-                          <span className="text-[8px] font-black px-1 py-0.2 rounded bg-emerald-500/20 text-emerald-400">
-                            ONLINE
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-[10px] text-slate-400 truncate">
-                        {target.rank.badge} {target.rank.title}
-                      </div>
-                    </div>
-                  </div>
-
-                  <button
-                    onClick={() => handleChallengeUser(target)}
-                    disabled={isChallengingUser === target.uid}
-                    className="py-1.5 px-2.5 bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white font-black rounded-xl text-xs shrink-0 active:scale-95 transition-transform flex items-center gap-1 cursor-pointer disabled:opacity-50"
-                  >
-                    <Swords className="w-3.5 h-3.5" />
-                    <span>{isChallengingUser === target.uid ? '...' : 'Retar'}</span>
-                  </button>
-                </div>
-              ))}
+                  Tots els registrats ({registeredUsers.length})
+                </button>
+                <button
+                  onClick={() => setUserFilterTab('online')}
+                  className={`px-2.5 py-1 rounded-lg flex items-center gap-1.5 transition-all cursor-pointer ${
+                    userFilterTab === 'online' ? 'bg-emerald-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                  <span>Connectats en temps real ({registeredUsers.filter(u => u.isOnline).length})</span>
+                </button>
+              </div>
             </div>
+
+            {registeredUsers.filter(u => userFilterTab === 'all' || u.isOnline).length === 0 ? (
+              <div className="p-4 rounded-2xl bg-slate-900/40 border border-slate-800 text-center text-slate-500 text-xs">
+                No hi ha cap altre opositor en línia ara mateix. Pots retar els usuaris registrats de forma asíncrona canviant a "Tots els registrats" o crear una sala amb codi!
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                {registeredUsers
+                  .filter(u => userFilterTab === 'all' || u.isOnline)
+                  .slice(0, 9)
+                  .map((target) => (
+                    <div
+                      key={target.uid}
+                      className="p-3 bg-slate-900/80 hover:bg-slate-900 border border-slate-800 hover:border-slate-700 rounded-2xl flex items-center justify-between gap-2.5 transition-all shadow-md"
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="relative shrink-0">
+                          <img 
+                            src={target.photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${target.uid}`} 
+                            alt={target.displayName}
+                            className="w-9 h-9 rounded-full border border-slate-700 object-cover bg-slate-800"
+                            referrerPolicy="no-referrer"
+                          />
+                          <span 
+                            className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-slate-950 ${
+                              target.isOnline ? 'bg-emerald-500' : 'bg-slate-500'
+                            }`}
+                            title={target.isOnline ? 'En línia' : 'Desconnectat'}
+                          />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-xs font-black text-white truncate max-w-[110px]">{target.displayName}</span>
+                            {target.isOnline && (
+                              <span className="text-[8px] font-black px-1 py-0.2 rounded bg-emerald-500/20 text-emerald-400">
+                                ONLINE
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[10px] text-slate-400 truncate">
+                            {target.rank.badge} {target.rank.title}
+                          </div>
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={() => handleChallengeUser(target)}
+                        disabled={isChallengingUser === target.uid}
+                        className="py-1.5 px-2.5 bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white font-black rounded-xl text-xs shrink-0 active:scale-95 transition-transform flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                      >
+                        <Swords className="w-3.5 h-3.5" />
+                        <span>{isChallengingUser === target.uid ? '...' : 'Retar'}</span>
+                      </button>
+                    </div>
+                  ))}
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -1127,24 +1246,14 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
               Pots crear una sala pública per compartir el codi, jugar contra el <b>Bot IA</b>, o retar directament qualsevol opositor registrat o en línia!
             </p>
 
-            <div className="grid grid-cols-2 gap-2 pt-1">
+            {/* Quick Action: Crear Sala */}
+            <div className="pt-1">
               <button
                 onClick={handleCreateNewGame}
-                className="py-2.5 px-3 bg-gradient-to-r from-sky-500 to-blue-600 text-white font-black rounded-xl text-xs active:scale-95 cursor-pointer flex items-center justify-center gap-1.5 shadow-md shadow-sky-500/20"
+                className="w-full py-2.5 px-3 bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-white font-black rounded-xl text-xs active:scale-95 cursor-pointer flex items-center justify-center gap-1.5 shadow-md shadow-sky-500/20"
               >
                 <span>➕</span>
-                <span>Crear Sala Oberta</span>
-              </button>
-
-              <button
-                onClick={() => {
-                  setShowNewMatchModal(false);
-                  handleStartBotPractice();
-                }}
-                className="py-2.5 px-3 bg-slate-800 hover:bg-slate-700 text-amber-300 font-black rounded-xl text-xs border border-amber-500/30 cursor-pointer flex items-center justify-center gap-1.5"
-              >
-                <span>🤖</span>
-                <span>Retar Bot IA</span>
+                <span>Crear Sala Oberta (amb Codi Compartit)</span>
               </button>
             </div>
 
@@ -1235,6 +1344,129 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
                       </button>
                     </div>
                   ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: Tria la dificultat del Bot IA (Exacte com la imatge de l'usuari) */}
+      {showBotDifficultyModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-[#0b1120] border border-slate-800 rounded-2xl w-full max-w-lg p-6 shadow-2xl space-y-4">
+            {/* Header with Bot Icon, Title, and Close Button */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="text-amber-400 text-xl">
+                  🤖
+                </div>
+                <h3 className="text-lg font-black text-white tracking-tight">
+                  Tria la dificultat del Bot IA
+                </h3>
+              </div>
+              <button
+                onClick={() => setShowBotDifficultyModal(false)}
+                className="w-8 h-8 rounded-full bg-slate-800/60 hover:bg-slate-800 flex items-center justify-center text-slate-400 hover:text-white transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Explanatory text */}
+            <p className="text-xs sm:text-[13px] text-slate-400 leading-relaxed">
+              El bot funciona <strong className="text-white font-black">íntegrament dins del joc</strong>, sense connexions externes: la partida s'obre a l'instant i mai es queda carregant.
+            </p>
+
+            {/* Difficulty Cards */}
+            <div className="space-y-3 pt-1">
+              {/* 1. Aspirant */}
+              <div
+                onClick={() => {
+                  setShowBotDifficultyModal(false);
+                  handleStartBotPractice('aspirant');
+                }}
+                className="p-4 rounded-2xl bg-[#0e172a] hover:bg-[#131f38] border border-slate-850 hover:border-amber-500/40 cursor-pointer transition-all flex items-center justify-between gap-4 group"
+              >
+                <div className="flex items-center gap-3.5 min-w-0">
+                  <div className="w-11 h-11 rounded-xl bg-slate-800/80 border border-slate-700/60 flex items-center justify-center text-xl shrink-0 group-hover:scale-105 transition-transform">
+                    🎓
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-sm font-black text-white">Aspirant</span>
+                      <span className="text-[11px] font-black px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-400 border border-amber-500/30">
+                        45% encert
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-400 mt-1 leading-snug">
+                      Nivell fàcil. Falla sovint: ideal per agafar ritme i encadenar ratlles.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="text-amber-400 text-lg shrink-0 group-hover:translate-x-0.5 transition-transform">
+                  ⚔️
+                </div>
+              </div>
+
+              {/* 2. Caporal */}
+              <div
+                onClick={() => {
+                  setShowBotDifficultyModal(false);
+                  handleStartBotPractice('caporal');
+                }}
+                className="p-4 rounded-2xl bg-[#0e172a] hover:bg-[#131f38] border border-slate-850 hover:border-amber-500/40 cursor-pointer transition-all flex items-center justify-between gap-4 group"
+              >
+                <div className="flex items-center gap-3.5 min-w-0">
+                  <div className="w-11 h-11 rounded-xl bg-slate-800/80 border border-slate-700/60 flex items-center justify-center text-xl shrink-0 group-hover:scale-105 transition-transform">
+                    👮
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-sm font-black text-white">Caporal</span>
+                      <span className="text-[11px] font-black px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-400 border border-amber-500/30">
+                        68% encert
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-400 mt-1 leading-snug">
+                      Nivell mitjà. Domina el temari bàsic i aprofita els teus errors.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="text-amber-400 text-lg shrink-0 group-hover:translate-x-0.5 transition-transform">
+                  ⚔️
+                </div>
+              </div>
+
+              {/* 3. Sergent */}
+              <div
+                onClick={() => {
+                  setShowBotDifficultyModal(false);
+                  handleStartBotPractice('sergent');
+                }}
+                className="p-4 rounded-2xl bg-[#0e172a] hover:bg-[#131f38] border border-slate-850 hover:border-amber-500/40 cursor-pointer transition-all flex items-center justify-between gap-4 group"
+              >
+                <div className="flex items-center gap-3.5 min-w-0">
+                  <div className="w-11 h-11 rounded-xl bg-slate-800/80 border border-slate-700/60 flex items-center justify-center text-xl shrink-0 group-hover:scale-105 transition-transform">
+                    🎖️
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-sm font-black text-white">Sergent</span>
+                      <span className="text-[11px] font-black px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-400 border border-amber-500/30">
+                        85% encert
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-400 mt-1 leading-snug">
+                      Nivell dur. Molt poques errades: hauràs de ser quirúrgic per guanyar-lo.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="text-amber-400 text-lg shrink-0 group-hover:translate-x-0.5 transition-transform">
+                  ⚔️
+                </div>
               </div>
             </div>
           </div>

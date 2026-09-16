@@ -734,3 +734,61 @@ export async function getAllRegisteredUsers(currentUserUid?: string): Promise<Us
   return list;
 }
 
+export async function getActiveUsers(currentUserUid?: string): Promise<UserProfile[]> {
+  const users = await getAllRegisteredUsers(currentUserUid);
+  return users.filter(u => u.isOnline);
+}
+
+export async function getAllUsersList(): Promise<UserProfile[]> {
+  return getAllRegisteredUsers();
+}
+
+export async function searchUsers(searchTerm: string, currentUserUid?: string): Promise<UserProfile[]> {
+  const term = searchTerm.toLowerCase().trim();
+  if (!term) return [];
+  const users = await getAllRegisteredUsers(currentUserUid);
+  return users.filter(u => 
+    (u.displayName && u.displayName.toLowerCase().includes(term)) ||
+    (u.email && u.email.toLowerCase().includes(term))
+  );
+}
+
+export async function createDirectChallengeGame(currentUser: UserProfile, targetUser: UserProfile): Promise<DuelGame> {
+  const code = Math.random().toString(36).substring(2, 8).toUpperCase();
+  const gameId = 'duel_' + Date.now() + '_' + code;
+  
+  const newGame: DuelGame = {
+    id: gameId,
+    hostPlayerUid: currentUser.uid,
+    hostPlayerName: currentUser.displayName,
+    hostPlayerAvatar: currentUser.photoURL,
+    hostPlayerShieldId: currentUser.equippedShieldId,
+    guestPlayerUid: targetUser.uid,
+    guestPlayerName: targetUser.displayName,
+    guestPlayerAvatar: targetUser.photoURL,
+    guestPlayerShieldId: targetUser.equippedShieldId,
+    hostRedStripes: 0,
+    guestRedStripes: 0,
+    currentTurnUid: currentUser.uid,
+    status: 'active',
+    consecutiveCorrect: { [currentUser.uid]: 0, [targetUser.uid]: 0 },
+    lastUpdated: Date.now(),
+    shareCode: code,
+  };
+
+  if (isFirebaseConfigured && db) {
+    try {
+      await setDoc(doc(db, 'games', gameId), newGame);
+    } catch (e) {
+      console.warn('Firestore direct challenge notice:', e);
+    }
+  }
+
+  const current = await getDuelsList(currentUser.uid);
+  const updated = [newGame, ...current.filter(g => g.id !== gameId)];
+  localStorage.setItem(LOCAL_GAMES_KEY, JSON.stringify(updated));
+
+  return newGame;
+}
+
+

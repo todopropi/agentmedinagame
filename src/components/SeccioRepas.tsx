@@ -16,6 +16,8 @@ import {
   ExternalLink,
   ChevronDown,
   ChevronUp,
+  ChevronLeft,
+  ChevronRight,
   Bookmark,
   Star
 } from 'lucide-react';
@@ -38,6 +40,13 @@ export const SeccioRepas: React.FC<SeccioRepasProps> = ({
   const [subTab, setSubTab] = useState<'fallades' | 'guardades' | 'regles_guardades' | 'confusions' | 'mnemo'>('fallades');
   const [activePracticeQuestion, setActivePracticeQuestion] = useState<Question | null>(null);
   const [expandedConfusionId, setExpandedConfusionId] = useState<string | null>(CONFUSION_CONCEPTS[0].id);
+  const tabsRef = React.useRef<HTMLDivElement>(null);
+
+  const scrollTabs = (offset: number) => {
+    if (tabsRef.current) {
+      tabsRef.current.scrollBy({ left: offset, behavior: 'smooth' });
+    }
+  };
 
   // Get failed and saved questions
   const failedQuestions = QUESTIONS_BANK.filter(q => user.failedQuestionIds?.includes(q.id));
@@ -89,66 +98,94 @@ export const SeccioRepas: React.FC<SeccioRepasProps> = ({
           </div>
         </div>
 
-        {/* Sub Navigation */}
-        <div className="flex items-center gap-2 mt-6 overflow-x-auto no-scrollbar pt-2 border-t border-slate-800">
+        {/* Sub Navigation with responsive arrows and sleek scrollbar */}
+        <div className="relative mt-6 pt-2 border-t border-slate-800 flex items-center">
           <button
-            onClick={() => { setSubTab('fallades'); setActivePracticeQuestion(null); }}
-            className={`px-3.5 py-2 rounded-xl text-xs font-extrabold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap ${
-              subTab === 'fallades'
-                ? 'bg-red-500 text-white shadow-md shadow-red-500/20'
-                : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-            }`}
+            type="button"
+            onClick={() => scrollTabs(-220)}
+            title="Desplaçar a l'esquerra"
+            className="hidden sm:flex items-center justify-center w-7 h-7 rounded-lg bg-slate-800/90 hover:bg-slate-700 text-slate-400 hover:text-white shrink-0 mr-1.5 cursor-pointer transition-colors border border-slate-700/50 shadow-sm"
           >
-            <AlertTriangle className="w-3.5 h-3.5" />
-            <span>Repàs d'Errors ({failedQuestions.length})</span>
+            <ChevronLeft className="w-4 h-4" />
           </button>
 
-          <button
-            onClick={() => { setSubTab('guardades'); setActivePracticeQuestion(null); }}
-            className={`px-3.5 py-2 rounded-xl text-xs font-extrabold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap ${
-              subTab === 'guardades'
-                ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
-                : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-            }`}
+          <div
+            ref={tabsRef}
+            onWheel={(e) => {
+              if (e.deltaY !== 0 && tabsRef.current) {
+                tabsRef.current.scrollLeft += e.deltaY;
+              }
+            }}
+            className="flex items-center gap-2 overflow-x-auto pretty-scrollbar py-1 scroll-smooth w-full select-none"
           >
-            <BookmarkCheck className="w-3.5 h-3.5" />
-            <span>Preguntes Guardades ({savedQuestions.length})</span>
-          </button>
+            <button
+              onClick={() => { setSubTab('fallades'); setActivePracticeQuestion(null); }}
+              className={`px-3.5 py-2 rounded-xl text-xs font-extrabold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+                subTab === 'fallades'
+                  ? 'bg-red-500 text-white shadow-md shadow-red-500/20'
+                  : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+              }`}
+            >
+              <AlertTriangle className="w-3.5 h-3.5" />
+              <span>Repàs d'Errors ({failedQuestions.length})</span>
+            </button>
+
+            <button
+              onClick={() => { setSubTab('guardades'); setActivePracticeQuestion(null); }}
+              className={`px-3.5 py-2 rounded-xl text-xs font-extrabold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+                subTab === 'guardades'
+                  ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
+                  : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+              }`}
+            >
+              <BookmarkCheck className="w-3.5 h-3.5" />
+              <span>Preguntes Guardades ({savedQuestions.length})</span>
+            </button>
+
+            <button
+              onClick={() => { setSubTab('regles_guardades'); setActivePracticeQuestion(null); }}
+              className={`px-3.5 py-2 rounded-xl text-xs font-extrabold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+                subTab === 'regles_guardades'
+                  ? 'bg-amber-400 text-slate-950 shadow-md shadow-amber-400/20'
+                  : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+              }`}
+            >
+              <Star className="w-3.5 h-3.5" />
+              <span>Regles i Trampes Guardades ({totalSavedRules})</span>
+            </button>
+
+            <button
+              onClick={() => { setSubTab('confusions'); setActivePracticeQuestion(null); }}
+              className={`px-3.5 py-2 rounded-xl text-xs font-extrabold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+                subTab === 'confusions'
+                  ? 'bg-purple-600 text-white shadow-md shadow-purple-600/20'
+                  : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+              }`}
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>Conceptes Trampa / Anti-Confusió</span>
+            </button>
+
+            <button
+              onClick={() => { setSubTab('mnemo'); setActivePracticeQuestion(null); }}
+              className={`px-3.5 py-2 rounded-xl text-xs font-extrabold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+                subTab === 'mnemo'
+                  ? 'bg-sky-500 text-slate-950 shadow-md shadow-sky-500/20'
+                  : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+              }`}
+            >
+              <Brain className="w-3.5 h-3.5" />
+              <span>Regles Mnemotècniques Clau</span>
+            </button>
+          </div>
 
           <button
-            onClick={() => { setSubTab('regles_guardades'); setActivePracticeQuestion(null); }}
-            className={`px-3.5 py-2 rounded-xl text-xs font-extrabold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap ${
-              subTab === 'regles_guardades'
-                ? 'bg-amber-400 text-slate-950 shadow-md shadow-amber-400/20'
-                : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-            }`}
+            type="button"
+            onClick={() => scrollTabs(220)}
+            title="Desplaçar a la dreta"
+            className="hidden sm:flex items-center justify-center w-7 h-7 rounded-lg bg-slate-800/90 hover:bg-slate-700 text-slate-400 hover:text-white shrink-0 ml-1.5 cursor-pointer transition-colors border border-slate-700/50 shadow-sm"
           >
-            <Star className="w-3.5 h-3.5" />
-            <span>Regles i Trampes Guardades ({totalSavedRules})</span>
-          </button>
-
-          <button
-            onClick={() => { setSubTab('confusions'); setActivePracticeQuestion(null); }}
-            className={`px-3.5 py-2 rounded-xl text-xs font-extrabold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap ${
-              subTab === 'confusions'
-                ? 'bg-purple-600 text-white shadow-md shadow-purple-600/20'
-                : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-            }`}
-          >
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>Conceptes Trampa / Anti-Confusió</span>
-          </button>
-
-          <button
-            onClick={() => { setSubTab('mnemo'); setActivePracticeQuestion(null); }}
-            className={`px-3.5 py-2 rounded-xl text-xs font-extrabold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap ${
-              subTab === 'mnemo'
-                ? 'bg-sky-500 text-slate-950 shadow-md shadow-sky-500/20'
-                : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-            }`}
-          >
-            <Brain className="w-3.5 h-3.5" />
-            <span>Regles Mnemotècniques Clau</span>
+            <ChevronRight className="w-4 h-4" />
           </button>
         </div>
       </div>

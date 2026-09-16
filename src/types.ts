@@ -50,6 +50,7 @@ export interface Question {
   opcions: string[];
   resposta: number; // 0, 1, 2, 3
   explicacio: string;
+  explanation?: string;
   guiaPagina?: string;
   guiaTema?: string;
   clauTribunal?: string;
@@ -92,6 +93,8 @@ export interface DuelGame {
   status: 'waiting' | 'active' | 'finished';
   winnerUid?: string;
   consecutiveCorrect: { [uid: string]: number }; // 0 to 3
+  botDifficulty?: 'aspirant' | 'caporal' | 'sergent';
+  botAccuracy?: number;
   lastUpdated: number;
   shareCode: string;
 }

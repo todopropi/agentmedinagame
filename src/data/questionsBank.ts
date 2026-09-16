@@ -1,4 +1,6 @@
-window.bancoPreguntes = [
+import { Question, QuestionAmbit } from '../types';
+
+export let QUESTIONS_BANK: Question[] = [
 /* ---Mossos ---*/
 /* --- Àmbit A Coneixements de l'entorn ---*/
 /* --- Àmbit A1 ---*/
@@ -6168,7 +6170,8 @@ window.bancoPreguntes = [
       "Ha de pagar una multa al CTESC.",
       "El Parlament es dissol."
     ],
-    "explanation": "El síndic o síndica de greuges pot ser separat del càrrec anticipadament per majoria de tres cinquenes parts del Parlament, en cas de negligència notòria. [Guia, Pàg. 115]"
+    "resposta": 1,
+    "explicacio": "El síndic o síndica de greuges pot ser separat del càrrec anticipadament per majoria de tres cinquenes parts del Parlament, en cas de negligència notòria. [Guia, Pàg. 115]"
   },
   {
     "id": "MOSSOS_B2_039",
@@ -14749,3 +14752,48 @@ window.bancoPreguntes = [
   },
 
 ];
+
+if (typeof window !== 'undefined') {
+  (window as any).bancoPreguntes = QUESTIONS_BANK;
+}
+
+export function getQuestionsByAmbit(ambit: QuestionAmbit | string): Question[] {
+  if (ambit === 'ISPC') {
+    return QUESTIONS_BANK;
+  }
+  return QUESTIONS_BANK.filter(q => q.ambit === ambit);
+}
+
+export function addCustomQuestions(questions: Question[]): void {
+  const existingIds = new Set(QUESTIONS_BANK.map(q => q.id));
+  const newQuestions = questions.filter(q => !existingIds.has(q.id));
+  QUESTIONS_BANK = [...newQuestions, ...QUESTIONS_BANK];
+  
+  if (typeof window !== 'undefined') {
+    (window as any).bancoPreguntes = QUESTIONS_BANK;
+  }
+
+  try {
+    const raw = localStorage.getItem('agent_medina_custom_questions');
+    const existing: Question[] = raw ? JSON.parse(raw) : [];
+    const merged = [...newQuestions, ...existing];
+    localStorage.setItem('agent_medina_custom_questions', JSON.stringify(merged));
+  } catch (e) {
+    console.warn('Failed to save custom questions to local storage:', e);
+  }
+}
+
+// Load custom questions from localStorage if present
+try {
+  const raw = typeof localStorage !== 'undefined' ? localStorage.getItem('agent_medina_custom_questions') : null;
+  if (raw) {
+    const custom: Question[] = JSON.parse(raw);
+    if (Array.isArray(custom) && custom.length > 0) {
+      const existingIds = new Set(QUESTIONS_BANK.map(q => q.id));
+      const toAdd = custom.filter(q => !existingIds.has(q.id));
+      QUESTIONS_BANK = [...toAdd, ...QUESTIONS_BANK];
+    }
+  }
+} catch (e) {
+  // ignore
+}
