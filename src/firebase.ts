@@ -16,7 +16,6 @@ import {
   getDoc, 
   setDoc, 
   updateDoc, 
-  deleteDoc,
   collection, 
   query, 
   orderBy, 
@@ -25,9 +24,9 @@ import {
   onSnapshot,
   Firestore
 } from 'firebase/firestore';
-import { UserProfile, DuelGame, HeadToHeadRecord, SpecializedShield } from './types';
+import { UserProfile, DuelGame, HeadToHeadRecord } from './types';
 import { calculateRank } from './data/ranks';
-import { DEFAULT_SHIELD_ID, SPECIALIZED_SHIELDS } from './data/badges';
+import { DEFAULT_SHIELD_ID } from './data/badges';
 
 // Helper to safely resolve Firebase configuration even if env keys were swapped
 function resolveFirebaseConfig() {
@@ -693,158 +692,4 @@ export function subscribeToMyChallenges(currentUserUid: string, onChallengeRecei
       }
     });
   });
-}
-
-/**
- * Elimina un duel tant de Firebase Firestore com del localStorage de l'usuari
- */
-export async function deleteDuelGame(gameId: string, userUid: string): Promise<void> {
-  if (isFirebaseConfigured && db && gameId) {
-    try {
-      await deleteDoc(doc(db, 'games', gameId));
-    } catch (e) {
-      console.warn('Firebase delete duel warning:', e);
-    }
-  }
-  if (userUid) {
-    try {
-      const raw = localStorage.getItem(LOCAL_GAMES_PREFIX + userUid);
-      if (raw) {
-        const list: DuelGame[] = JSON.parse(raw);
-        const filtered = list.filter(g => g.id !== gameId);
-        localStorage.setItem(LOCAL_GAMES_PREFIX + userUid, JSON.stringify(filtered));
-      }
-    } catch (e) {}
-  }
-}
-
-/**
- * SINCRONITZACIÓ EN TEMPS REAL DEL CATÀLEG DE LA BOTIGA D'ESCUTS
- */
-const LOCAL_SHOP_ITEMS_KEY = 'agent_medina_shop_catalog_v1';
-
-export function getLocalShopItems(): SpecializedShield[] {
-  try {
-    const raw = localStorage.getItem(LOCAL_SHOP_ITEMS_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed;
-      }
-    }
-  } catch (e) {}
-  return SPECIALIZED_SHIELDS;
-}
-
-export function subscribeToShopCatalog(onUpdate: (items: SpecializedShield[]) => void): () => void {
-  // Emissió inicial immediata des de memòria cau / catàleg base
-  const initial = getLocalShopItems();
-  onUpdate(initial);
-
-  // BroadcastChannel per comunicació entre pestanyes / clients
-  let channel: BroadcastChannel | null = null;
-  try {
-    if (typeof BroadcastChannel !== 'undefined') {
-      channel = new BroadcastChannel('agent_medina_shop_channel');
-      channel.onmessage = (event) => {
-        if (event.data && Array.isArray(event.data.items)) {
-          onUpdate(event.data.items);
-        }
-      };
-    }
-  } catch (e) {}
-
-  // Sincronització via storage events
-  const handleStorage = (e: StorageEvent) => {
-    if (e.key === LOCAL_SHOP_ITEMS_KEY && e.newValue) {
-      try {
-        const parsed = JSON.parse(e.newValue);
-        if (Array.isArray(parsed)) onUpdate(parsed);
-      } catch (err) {}
-    }
-  };
-  window.addEventListener('storage', handleStorage);
-
-  let unsubFirestore = () => {};
-
-  if (isFirebaseConfigured && db) {
-    try {
-      const q = query(collection(db, 'shop_items'));
-      unsubFirestore = onSnapshot(q, (snapshot) => {
-        if (!snapshot.empty) {
-          const items: SpecializedShield[] = [];
-          snapshot.forEach((docSnap) => {
-            const data = docSnap.data() as SpecializedShield;
-            if (data && data.id) {
-              items.push(data);
-            }
-          });
-          if (items.length > 0) {
-            localStorage.setItem(LOCAL_SHOP_ITEMS_KEY, JSON.stringify(items));
-            onUpdate(items);
-          }
-        }
-      }, (error) => {
-        console.warn('Firestore shop_items onSnapshot warning:', error);
-      });
-    } catch (e) {
-      console.warn('subscribeToShopCatalog Firestore error:', e);
-    }
-  }
-
-  return () => {
-    unsubFirestore();
-    if (channel) {
-      try { channel.close(); } catch (e) {}
-    }
-    window.removeEventListener('storage', handleStorage);
-  };
-}
-
-export async function saveShopItemRemote(item: SpecializedShield): Promise<void> {
-  const current = getLocalShopItems();
-  const index = current.findIndex(s => s.id === item.id);
-  const updated = index >= 0
-    ? current.map(s => s.id === item.id ? item : s)
-    : [...current, item];
-
-  localStorage.setItem(LOCAL_SHOP_ITEMS_KEY, JSON.stringify(updated));
-
-  try {
-    if (typeof BroadcastChannel !== 'undefined') {
-      const ch = new BroadcastChannel('agent_medina_shop_channel');
-      ch.postMessage({ items: updated });
-      ch.close();
-    }
-  } catch (e) {}
-
-  if (isFirebaseConfigured && db) {
-    try {
-      await setDoc(doc(db, 'shop_items', item.id), item, { merge: true });
-    } catch (e) {
-      console.warn('Error saving shop item to Firestore:', e);
-    }
-  }
-}
-
-export async function deleteShopItemRemote(itemId: string): Promise<void> {
-  const current = getLocalShopItems();
-  const updated = current.filter(s => s.id !== itemId);
-  localStorage.setItem(LOCAL_SHOP_ITEMS_KEY, JSON.stringify(updated));
-
-  try {
-    if (typeof BroadcastChannel !== 'undefined') {
-      const ch = new BroadcastChannel('agent_medina_shop_channel');
-      ch.postMessage({ items: updated });
-      ch.close();
-    }
-  } catch (e) {}
-
-  if (isFirebaseConfigured && db) {
-    try {
-      await deleteDoc(doc(db, 'shop_items', itemId));
-    } catch (e) {
-      console.warn('Error deleting shop item from Firestore:', e);
-    }
-  }
 }

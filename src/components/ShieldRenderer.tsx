@@ -1,6 +1,5 @@
 import React from 'react';
 import { SPECIALIZED_SHIELDS } from '../data/badges';
-import { getLocalShopItems } from '../firebase';
 
 interface ShieldRendererProps {
   shieldId: string;
@@ -19,37 +18,8 @@ export const ShieldRenderer: React.FC<ShieldRendererProps> = ({
   showName = false,
   glow = false 
 }) => {
-  const dynamicList = getLocalShopItems();
-  const shield = dynamicList.find(s => s.id === shieldId) || SPECIALIZED_SHIELDS.find(s => s.id === shieldId) || SPECIALIZED_SHIELDS[0];
+  const shield = SPECIALIZED_SHIELDS.find(s => s.id === shieldId) || SPECIALIZED_SHIELDS[0];
   const uid = React.useId().replace(/:/g, '');
-
-  if (shield?.imageUrl) {
-    return (
-      <div className="flex flex-col items-center justify-center select-none">
-        <div 
-          className="relative flex items-center justify-center transition-transform hover:scale-105"
-          style={{ 
-            width: size, 
-            height: size,
-            filter: glow 
-              ? 'drop-shadow(0 0 12px rgba(234, 179, 8, 0.45)) drop-shadow(0 4px 6px rgba(0,0,0,0.7))'
-              : 'drop-shadow(0 3px 5px rgba(0,0,0,0.65))'
-          }}
-        >
-          <img 
-            src={shield.imageUrl} 
-            alt={shield.nom} 
-            className="w-full h-full object-contain rounded-xl"
-          />
-        </div>
-        {showName && (
-          <span className="text-[10px] font-bold text-slate-300 mt-1 max-w-[80px] truncate text-center">
-            {shield.nom}
-          </span>
-        )}
-      </div>
-    );
-  }
 
   return (
     <div className="flex flex-col items-center justify-center select-none">

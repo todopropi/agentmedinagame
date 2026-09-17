@@ -8,15 +8,13 @@ import {
   getHeadToHeadRecords,
   getStoredLeaderboard,
   getAllRegisteredUsers,
-  createDirectChallengeGame,
-  deleteDuelGame
+  createDirectChallengeGame
 } from '../firebase';
 import { 
   fetchProfilesForChallenges, 
   createMatchInSupabase, 
   updateMatchTurnInSupabase,
-  fetchUserMatches,
-  deleteMatchInSupabase
+  fetchUserMatches
 } from '../../supabase';
 import { calculateRank } from '../data/ranks';
 import { EscutMossosStripes } from './EscutMossosStripes';
@@ -860,25 +858,6 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
     setTimeout(() => setCopiedCode(false), 2000);
   };
 
-  const handleDeleteWaitingMatch = async (gameId: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (!window.confirm('Vols cancel·lar i eliminar aquest duel en espera?')) {
-      return;
-    }
-    AudioEngine.playClick();
-    try {
-      await deleteMatchInSupabase(gameId);
-      await deleteDuelGame(gameId, user.uid);
-      setGameList(prev => prev.filter(g => g.id !== gameId));
-      if (activeGame?.id === gameId) {
-        setActiveGame(null);
-      }
-      await loadDuelsData();
-    } catch (err) {
-      console.warn('Error eliminant el duel en espera:', err);
-    }
-  };
-
   // Partition matches
   const myTurnGames = gameList.filter(g => g.status === 'active' && g.currentTurnUid === user.uid);
   const rivalTurnGames = gameList.filter(g => g.status === 'active' && g.currentTurnUid !== user.uid);
@@ -1398,31 +1377,21 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
                         AudioEngine.playClick();
                         setActiveGame(game);
                       }}
-                      className="p-3 bg-slate-900/60 hover:bg-slate-900 border border-slate-800 rounded-2xl cursor-pointer transition-all flex items-center justify-between gap-3 opacity-90 group"
+                      className="p-3 bg-slate-900/60 hover:bg-slate-900 border border-slate-800 rounded-2xl cursor-pointer transition-all flex items-center justify-between gap-3 opacity-80"
                     >
-                      <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                        <div className="w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center text-base shrink-0">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center text-base">
                           ⏳
                         </div>
-                        <div className="min-w-0 flex-1">
+                        <div>
                           <div className="text-xs font-bold text-slate-300 truncate max-w-[140px]">{rName}</div>
                           <div className="text-[10px] text-slate-500">🛡️ {myS}/4 vs {rivalS}/4</div>
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-2 shrink-0">
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-800 text-amber-400 border border-slate-700 hidden sm:inline-block">
-                          Esperant que jugui el teu rival
-                        </span>
-                        <button
-                          type="button"
-                          onClick={(e) => handleDeleteWaitingMatch(game.id, e)}
-                          title="Cancel·lar / Eliminar duel"
-                          className="p-1.5 rounded-lg bg-slate-800/90 hover:bg-rose-950 text-slate-400 hover:text-rose-400 border border-slate-700/70 hover:border-rose-500/50 transition-colors cursor-pointer flex items-center justify-center shadow-sm"
-                        >
-                          <X className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-800 text-amber-400 border border-slate-700">
+                        Esperant que jugui el teu rival
+                      </span>
                     </div>
                   );
                 })}

@@ -50,9 +50,6 @@ export default function App() {
     const stored = getStoredLocalUser();
     if (stored) {
       stored.rank = calculateRank(stored.xp);
-      if (stored.email?.toLowerCase().trim() === 'opossscar@gmail.com') {
-        stored.isAdmin = true;
-      }
       setCurrentUser(stored);
       const uid = stored.uid || (stored as any).id || '';
       syncSupabaseProfile({
@@ -70,9 +67,6 @@ export default function App() {
       clearTimeout(timeoutId);
       if (user) {
         user.rank = calculateRank(user.xp);
-        if (user.email?.toLowerCase().trim() === 'opossscar@gmail.com') {
-          user.isAdmin = true;
-        }
         setCurrentUser(user);
         const uid = user.uid || (user as any).id || '';
         syncSupabaseProfile({
@@ -341,6 +335,18 @@ export default function App() {
           <RankingGlobal currentUser={currentUser} />
         )}
       </main>
+
+      <div className="fixed bottom-4 right-4 z-30">
+        <button
+          type="button"
+          onClick={() => setShowImportModal(true)}
+          title="Importar preguntes d'arxius externs"
+          className="px-3.5 py-2.5 bg-slate-900/90 hover:bg-slate-800 text-sky-400 hover:text-sky-300 border border-slate-700/80 rounded-2xl text-xs font-bold flex items-center gap-2 shadow-xl backdrop-blur cursor-pointer transition-all hover:scale-105"
+        >
+          <Upload className="w-4 h-4" />
+          <span className="hidden sm:inline">Importar Preguntes (.json)</span>
+        </button>
+      </div>
 
       <ImportQuestionsModal
         isOpen={showImportModal}

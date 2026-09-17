@@ -1,16 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { UserProfile, SpecializedShield } from '../types';
 import { SPECIALIZED_SHIELDS } from '../data/badges';
 import { ShieldRenderer } from './ShieldRenderer';
 import { TedaxBadge } from './TedaxBadge';
-import { ShopItemAdminModal } from './ShopItemAdminModal';
 import { AudioEngine } from '../utils/audio';
-import { 
-  subscribeToShopCatalog, 
-  saveShopItemRemote, 
-  deleteShopItemRemote, 
-  getLocalShopItems 
-} from '../firebase';
 import confetti from 'canvas-confetti';
 import { 
   Coins, 
@@ -20,11 +13,7 @@ import {
   ShieldCheck, 
   Lock, 
   Info,
-  Award,
-  Edit2,
-  Trash2,
-  PlusCircle,
-  ShieldAlert
+  Award
 } from 'lucide-react';
 
 interface TiendaEscutsProps {
@@ -39,25 +28,6 @@ export const TiendaEscuts: React.FC<TiendaEscutsProps> = ({
   onBuyShield
 }) => {
   const [filterCategory, setFilterCategory] = useState<'tots' | 'desbloquejats' | 'tedax'>('tots');
-  const [shields, setShields] = useState<SpecializedShield[]>(getLocalShopItems());
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingItem, setEditingItem] = useState<SpecializedShield | null>(null);
-
-  // Rol d'administrador exclusiu per a opossscar@gmail.com
-  const isAdmin = Boolean(
-    (user.email && user.email.toLowerCase().trim() === 'opossscar@gmail.com') ||
-    user.isAdmin
-  );
-
-  // Sincronització en temps real del catàleg de la botiga
-  useEffect(() => {
-    const unsub = subscribeToShopCatalog((items) => {
-      if (items && items.length > 0) {
-        setShields(items);
-      }
-    });
-    return () => unsub();
-  }, []);
 
   const handleBuy = (shield: SpecializedShield) => {
     if (user.merits < shield.preuMerits) {
@@ -74,7 +44,7 @@ export const TiendaEscuts: React.FC<TiendaEscutsProps> = ({
     });
   };
 
-  const filteredShields = shields.filter(s => {
+  const filteredShields = SPECIALIZED_SHIELDS.filter(s => {
     if (filterCategory === 'desbloquejats') {
       return user.unlockedShieldIds?.includes(s.id);
     }
@@ -84,57 +54,8 @@ export const TiendaEscuts: React.FC<TiendaEscutsProps> = ({
     return true;
   });
 
-  const handleSaveItem = async (item: SpecializedShield) => {
-    AudioEngine.playCorrect();
-    await saveShopItemRemote(item);
-  };
-
-  const handleDeleteItem = async (shield: SpecializedShield) => {
-    if (!window.confirm(`Segur que vols eliminar l'article "${shield.nom}" de la botiga?`)) {
-      return;
-    }
-    AudioEngine.playClick();
-    await deleteShopItemRemote(shield.id);
-  };
-
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6">
-      {/* Panell d'Administració Exclusiu per opossscar@gmail.com */}
-      {isAdmin && (
-        <div className="bg-gradient-to-r from-amber-950/80 via-slate-900 to-slate-950 border-2 border-amber-500/60 rounded-3xl p-5 shadow-2xl flex flex-col md:flex-row items-center justify-between gap-4 animate-fadeIn">
-          <div className="flex items-center gap-3.5">
-            <div className="p-3 bg-amber-500/20 text-amber-400 border border-amber-500/40 rounded-2xl shrink-0">
-              <ShieldAlert className="w-6 h-6" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="px-2.5 py-0.5 rounded-full bg-amber-500 text-slate-950 font-black text-[10px] uppercase tracking-wider">
-                  Panell Administrador Actiu
-                </span>
-                <span className="text-xs text-amber-300 font-mono font-bold">
-                  {user.email || 'opossscar@gmail.com'}
-                </span>
-              </div>
-              <p className="text-xs text-slate-300 mt-1 max-w-2xl">
-                Com a administrador pots modificar preus, noms, subtítols o descripcions, crear nous articles i eliminar-los. Els canvis es sincronitzen en temps real per a tots els usuaris de l'aplicació.
-              </p>
-            </div>
-          </div>
-
-          <button
-            type="button"
-            onClick={() => {
-              setEditingItem(null);
-              setIsModalOpen(true);
-            }}
-            className="shrink-0 px-4 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs rounded-xl flex items-center gap-2 shadow-lg shadow-amber-500/25 transition-all cursor-pointer hover:scale-105"
-          >
-            <PlusCircle className="w-4 h-4" />
-            <span>Afegir Nou Article</span>
-          </button>
-        </div>
-      )}
-
       {/* Top Banner & Wallet */}
       <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 sm:p-8 shadow-xl relative overflow-hidden">
         <div className="absolute top-0 right-0 w-80 h-80 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
@@ -146,7 +67,7 @@ export const TiendaEscuts: React.FC<TiendaEscutsProps> = ({
                 <ShoppingBag className="w-5 h-5" />
               </span>
               <h2 className="text-xl sm:text-2xl font-black text-white">
-                Galeria & Botiga d'Escuts Policials ({shields.length} Unitats Oficials)
+                Galeria & Botiga d'Escuts Policials ({SPECIALIZED_SHIELDS.length} Unitats Oficials)
               </h2>
             </div>
             <p className="text-xs sm:text-sm text-slate-400 mt-1 max-w-xl">
@@ -170,33 +91,26 @@ export const TiendaEscuts: React.FC<TiendaEscutsProps> = ({
 
         {/* Highlight Banner for Official TEDAX-NRBQ Patch */}
         {(() => {
-          const tedaxShield = shields.find(s => s.id === 'tedax') || shields[0];
-          if (!tedaxShield) return null;
-          const isTedaxUnlocked = user.unlockedShieldIds?.includes(tedaxShield.id);
-          const isTedaxEquipped = user.equippedShieldId === tedaxShield.id;
+          const tedaxShield = SPECIALIZED_SHIELDS.find(s => s.id === 'tedax') || SPECIALIZED_SHIELDS[0];
+          const isTedaxUnlocked = user.unlockedShieldIds?.includes('tedax');
+          const isTedaxEquipped = user.equippedShieldId === 'tedax';
 
           return (
             <div className="mt-6 p-4 sm:p-5 bg-gradient-to-r from-slate-950 to-slate-900 border border-amber-500/50 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-5">
               <div className="flex flex-col sm:flex-row items-center gap-4 text-center sm:text-left">
                 <div className="shrink-0 p-1">
-                  {tedaxShield.imageUrl ? (
-                    <div className="w-28 h-28 flex items-center justify-center p-2 rounded-2xl bg-slate-950 border border-slate-800">
-                      <img src={tedaxShield.imageUrl} alt={tedaxShield.nom} className="w-full h-full object-contain" />
-                    </div>
-                  ) : (
-                    <TedaxBadge size={140} glow={true} />
-                  )}
+                  <TedaxBadge size={140} glow={true} />
                 </div>
                 <div>
                   <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-500/20 border border-amber-400/40 text-amber-300 text-[10px] font-black uppercase mb-1">
                     <Sparkles className="w-3 h-3" />
-                    <span>Distintiu Destacat d'Alta Distinció</span>
+                    <span>Insígnia d'Elit de Desactivació</span>
                   </div>
                   <h3 className="text-base font-black text-white">
-                    {tedaxShield.nom}
+                    Parche Oficial TEDAX - NRBQ
                   </h3>
                   <p className="text-xs text-slate-300 max-w-md mt-0.5">
-                    {tedaxShield.descripcio}
+                    Distintiu d'alta distinció reservat als millors opositors. Boina vermella amb espases creuades, flama i les 4 barres de la Senyera.
                   </p>
                 </div>
               </div>
@@ -211,7 +125,7 @@ export const TiendaEscuts: React.FC<TiendaEscutsProps> = ({
                   ) : (
                     <button
                       type="button"
-                      onClick={() => onEquipShield(tedaxShield.id)}
+                      onClick={() => onEquipShield('tedax')}
                       className="px-5 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs rounded-xl transition-all cursor-pointer shadow-md shadow-amber-500/20"
                     >
                       Equipar aquest parche
@@ -232,7 +146,7 @@ export const TiendaEscuts: React.FC<TiendaEscutsProps> = ({
           );
         })()}
 
-        {/* Guia d'Economia de Mèrits */}
+        {/* Guia d'Economia de Mèrits (Lògica de progressió i addicció) */}
         <div className="mt-5 p-3.5 bg-slate-950/70 border border-slate-800 rounded-2xl">
           <div className="flex items-center gap-2 text-xs font-black text-amber-400 mb-2">
             <Award className="w-4 h-4" />
@@ -259,7 +173,7 @@ export const TiendaEscuts: React.FC<TiendaEscutsProps> = ({
         </div>
 
         {/* Filter buttons */}
-        <div className="flex items-center gap-2 mt-5 flex-wrap">
+        <div className="flex items-center gap-2 mt-5">
           <button
             onClick={() => setFilterCategory('tots')}
             className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors cursor-pointer ${
@@ -268,7 +182,7 @@ export const TiendaEscuts: React.FC<TiendaEscutsProps> = ({
                 : 'bg-slate-800 text-slate-400 hover:text-white'
             }`}
           >
-            Tots els escuts ({shields.length})
+            Tots els escuts ({SPECIALIZED_SHIELDS.length})
           </button>
           <button
             onClick={() => setFilterCategory('desbloquejats')}
@@ -293,7 +207,7 @@ export const TiendaEscuts: React.FC<TiendaEscutsProps> = ({
         </div>
       </div>
 
-      {/* Grid of shields */}
+      {/* Grid of all 17 shields */}
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
         {filteredShields.map((shield) => {
           const isUnlocked = user.unlockedShieldIds?.includes(shield.id);
@@ -303,7 +217,7 @@ export const TiendaEscuts: React.FC<TiendaEscutsProps> = ({
           return (
             <div
               key={shield.id}
-              className={`bg-slate-900 border rounded-2xl p-4 sm:p-5 flex flex-col justify-between transition-all relative group ${
+              className={`bg-slate-900 border rounded-2xl p-4 sm:p-5 flex flex-col justify-between transition-all ${
                 isEquipped
                   ? 'border-amber-500 ring-2 ring-amber-500/40 shadow-xl shadow-amber-500/10'
                   : isUnlocked
@@ -311,47 +225,10 @@ export const TiendaEscuts: React.FC<TiendaEscutsProps> = ({
                   : 'border-slate-800/80 opacity-90'
               }`}
             >
-              {/* Botons d'Edició i Eliminació per a Administrador (opossscar@gmail.com) */}
-              {isAdmin && (
-                <div className="flex items-center justify-end gap-1.5 mb-2 -mt-1 -mr-1">
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setEditingItem(shield);
-                      setIsModalOpen(true);
-                    }}
-                    title="Modificar preu, nom, subtítol, descripció o logo"
-                    className="p-1.5 rounded-lg bg-slate-800/90 hover:bg-amber-500/20 text-slate-400 hover:text-amber-400 border border-slate-700/60 hover:border-amber-500/50 transition-colors cursor-pointer"
-                  >
-                    <Edit2 className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleDeleteItem(shield);
-                    }}
-                    title="Eliminar aquest article de la botiga"
-                    className="p-1.5 rounded-lg bg-slate-800/90 hover:bg-rose-950/80 text-slate-400 hover:text-rose-400 border border-slate-700/60 hover:border-rose-500/50 transition-colors cursor-pointer"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              )}
-
               {/* Badge visual & top status */}
               <div className="flex flex-col items-center text-center mb-3">
                 <div className="relative mb-2">
-                  {shield.imageUrl ? (
-                    <div className="w-20 h-20 sm:w-24 sm:h-24 mx-auto flex items-center justify-center p-2 rounded-2xl bg-slate-950/80 border border-slate-800 shadow-inner overflow-hidden">
-                      <img
-                        src={shield.imageUrl}
-                        alt={shield.nom}
-                        className="w-full h-full object-contain filter drop-shadow-md"
-                      />
-                    </div>
-                  ) : shield.escutTipus === 'tedax' ? (
+                  {shield.escutTipus === 'tedax' ? (
                     <TedaxBadge size={110} glow={isEquipped} />
                   ) : (
                     <ShieldRenderer shieldId={shield.id} size={70} glow={isEquipped} />
@@ -411,17 +288,6 @@ export const TiendaEscuts: React.FC<TiendaEscutsProps> = ({
           );
         })}
       </div>
-
-      {/* Modal d'Administració d'Articles */}
-      <ShopItemAdminModal
-        isOpen={isModalOpen}
-        onClose={() => {
-          setIsModalOpen(false);
-          setEditingItem(null);
-        }}
-        itemToEdit={editingItem}
-        onSave={handleSaveItem}
-      />
     </div>
   );
 };

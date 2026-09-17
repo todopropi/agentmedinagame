@@ -222,24 +222,3 @@ export async function fetchSupabaseRanking(limitCount = 100) {
     return [];
   }
 }
-
-/**
- * Eliminar / cancelar una partida en Supabase por ID
- */
-export async function deleteMatchInSupabase(matchId: string | number): Promise<boolean> {
-  try {
-    const { error } = await supabase
-      .from('matches')
-      .delete()
-      .eq('id', matchId);
-
-    if (error) {
-      console.warn('Supabase delete match error:', error.message, error);
-      return false;
-    }
-    return true;
-  } catch (err) {
-    console.warn('Supabase delete match exception:', err);
-    return false;
-  }
-}
