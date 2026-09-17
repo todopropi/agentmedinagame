@@ -9,6 +9,7 @@ import {
   subscribeUnauthorizedDomainAlert,
   UnauthorizedDomainInfo
 } from '../firebase';
+import { syncSupabaseProfile } from '../../supabase';
 import { OfficialEmblem } from './OfficialEmblem';
 import { Shield, Sparkles, Mail, Lock, User, AlertCircle, ArrowRight, Copy, Check, Info } from 'lucide-react';
 
@@ -38,6 +39,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onLoginSuccess }) => {
       setLoading(true);
       setErrorMsg(null);
       const profile = await loginWithGoogle();
+      const userId = profile.uid || (profile as any).id || '';
+      await syncSupabaseProfile({
+        uid: userId,
+        username: profile.displayName || 'Aspirant',
+        total_points: profile.xp ?? 0
+      });
       onLoginSuccess(profile);
     } catch (err: any) {
       const msg = err?.message || 'Error en iniciar sessió amb Google.';
@@ -52,6 +59,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onLoginSuccess }) => {
       setLoading(true);
       setErrorMsg(null);
       const profile = await loginAsGuest(displayName || 'Aspirant Medina');
+      const userId = profile.uid || (profile as any).id || '';
+      await syncSupabaseProfile({
+        uid: userId,
+        username: profile.displayName || displayName || 'Aspirant Medina',
+        total_points: profile.xp ?? 0
+      });
       onLoginSuccess(profile);
     } catch (err: any) {
       setErrorMsg('No s\'ha pogut iniciar la sessió en mode Aspirant.');
@@ -80,6 +93,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onLoginSuccess }) => {
       } else {
         profile = await loginWithEmailPassword(email, password);
       }
+      const userId = profile.uid || (profile as any).id || '';
+      await syncSupabaseProfile({
+        uid: userId,
+        username: profile.displayName || displayName || 'Aspirant',
+        total_points: profile.xp ?? 0
+      });
       onLoginSuccess(profile);
     } catch (err: any) {
       setErrorMsg(err?.message || 'Error en autenticar. Comprova les dades.');

@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { UserProfile } from '../types';
 import { getAllRegisteredUsers, getStoredLeaderboard } from '../firebase';
+import { fetchSupabaseRanking } from '../../supabase';
+import { calculateRank } from '../data/ranks';
 import { ShieldRenderer } from './ShieldRenderer';
 import { Trophy, Medal, Crown, Sparkles, Award } from 'lucide-react';
 
@@ -16,13 +18,43 @@ export const RankingGlobal: React.FC<RankingGlobalProps> = ({ currentUser }) => 
 
   useEffect(() => {
     let isMounted = true;
-    getAllRegisteredUsers().then(users => {
-      if (isMounted) {
-        // Ensure current user is in the list
-        const exists = users.some(u => u.uid === currentUser.uid);
-        const fullList = exists ? users : [...users, currentUser];
-        setLeaderboard(fullList);
+    Promise.all([
+      getAllRegisteredUsers(),
+      fetchSupabaseRanking()
+    ]).then(([users, spRanking]) => {
+      if (!isMounted) return;
+
+      if (!spRanking || spRanking.length === 0) {
+        console.warn('⚠️ [RankingGlobal] La consulta a Supabase fetchSupabaseRanking() retornó una lista vacía. Comprueba que la tabla "profiles" tenga registros o revisa si las políticas RLS permiten lectura anónima (SELECT).');
+      } else {
+        console.log(`✅ [RankingGlobal] Supabase ha retornado ${spRanking.length} perfiles.`);
       }
+
+      const spUsers: UserProfile[] = (spRanking || []).map((p: any) => ({
+        uid: p.id,
+        displayName: p.username || 'Aspirant',
+        email: '',
+        xp: p.total_points || 0,
+        merits: Math.floor((p.total_points || 0) / 10),
+        rank: calculateRank(p.total_points || 0),
+        equippedShieldId: 'escut_basico',
+        unlockedShieldIds: ['escut_basico'],
+        failedQuestionIds: [],
+        savedQuestionIds: [],
+        photoURL: p.avatar_url
+      }));
+
+      const userMap = new Map<string, UserProfile>();
+      spUsers.forEach(u => userMap.set(u.uid, u));
+      if (Array.isArray(users)) {
+        users.forEach(u => userMap.set(u.uid, u));
+      }
+      if (!userMap.has(currentUser.uid)) {
+        userMap.set(currentUser.uid, currentUser);
+      }
+      setLeaderboard(Array.from(userMap.values()));
+    }).catch(err => {
+      console.warn('❌ [RankingGlobal] Error cargando rankings desde Supabase / Firebase:', err);
     });
     return () => { isMounted = false; };
   }, [currentUser]);

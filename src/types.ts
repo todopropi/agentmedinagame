@@ -72,9 +72,10 @@ export interface SpecializedShield {
   unitat: string;
   preuMerits: number;
   descripcio: string;
-  escutTipus: 'tedax' | 'gei' | 'brimo' | 'arro' | 'transit' | 'canina' | 'subaquatica' | 'subsol' | 'medis_aeris' | 'cgic' | 'tedax_canina' | 'gu_bcn' | 'policia_local' | 'mediacio' | 'drons' | 'escortes' | 'ispc';
-  colorPrincipal: string;
-  colorSecundari: string;
+  imageUrl?: string;
+  escutTipus?: 'tedax' | 'gei' | 'brimo' | 'arro' | 'transit' | 'canina' | 'subaquatica' | 'subsol' | 'medis_aeris' | 'cgic' | 'tedax_canina' | 'gu_bcn' | 'policia_local' | 'mediacio' | 'drons' | 'escortes' | 'ispc' | string;
+  colorPrincipal?: string;
+  colorSecundari?: string;
 }
 
 export interface DuelGame {

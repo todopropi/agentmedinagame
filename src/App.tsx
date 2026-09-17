@@ -5,12 +5,15 @@ import {
   logOutUser, 
   syncUserProfileUpdate, 
   loadUserProfile,
+  getStoredLocalUser,
   getUnauthorizedDomainAlert,
   subscribeUnauthorizedDomainAlert,
+  startOnlinePresence,
   UnauthorizedDomainInfo
 } from './firebase';
 import { calculateRank } from './data/ranks';
 import { SPECIALIZED_SHIELDS } from './data/badges';
+import { syncSupabaseProfile } from '../supabase';
 import { AuthModal } from './components/AuthModal';
 import { Navbar, ActiveTab } from './components/Navbar';
 import { ModeCampanya } from './components/ModeCampanya';
@@ -41,9 +44,24 @@ export default function App() {
     return unsub;
   }, []);
 
-  // Initialize Firebase Auth Listener
+  // Initialize Firebase Auth Listener, LocalStorage Session Restore & Active Online Presence
   useEffect(() => {
-    // Failsafe timeout to prevent sticking on loading screen if network or auth is delayed
+    // 1. Restaurar sessió immediata des de localStorage si existeix (recàrrega de pàgina)
+    const stored = getStoredLocalUser();
+    if (stored) {
+      stored.rank = calculateRank(stored.xp);
+      if (stored.email?.toLowerCase().trim() === 'opossscar@gmail.com') {
+        stored.isAdmin = true;
+      }
+      setCurrentUser(stored);
+      const uid = stored.uid || (stored as any).id || '';
+      syncSupabaseProfile({
+        uid,
+        username: stored.displayName || 'Aspirant',
+        total_points: stored.xp ?? 0
+      });
+    }
+
     const timeoutId = setTimeout(() => {
       setAuthChecked(true);
     }, 1500);
@@ -51,11 +69,21 @@ export default function App() {
     const unsubscribe = initAuthListener(async (user) => {
       clearTimeout(timeoutId);
       if (user) {
-        // user already has full profile loaded by initAuthListener
         user.rank = calculateRank(user.xp);
+        if (user.email?.toLowerCase().trim() === 'opossscar@gmail.com') {
+          user.isAdmin = true;
+        }
         setCurrentUser(user);
+        const uid = user.uid || (user as any).id || '';
+        syncSupabaseProfile({
+          uid,
+          username: user.displayName || 'Aspirant',
+          total_points: user.xp ?? 0
+        });
       } else {
-        setCurrentUser(null);
+        if (!getStoredLocalUser()) {
+          setCurrentUser(null);
+        }
       }
       setAuthChecked(true);
     });
@@ -65,6 +93,13 @@ export default function App() {
       if (typeof unsubscribe === 'function') unsubscribe();
     };
   }, []);
+
+  // Latido de Presencia mientras haya un usuario con sesión activa
+  useEffect(() => {
+    if (!currentUser?.uid) return;
+    const stopPresence = startOnlinePresence(currentUser.uid);
+    return () => stopPresence();
+  }, [currentUser?.uid]);
 
   // Handle Logout
   const handleLogout = async () => {
@@ -97,7 +132,7 @@ export default function App() {
     }
 
     // Check if user ascended to a new rank
-    if (newRank.id !== oldRank.id && xpGained > 0) {
+    if (newRank.id !== oldRank?.id && xpGained > 0) {
       setRankUpNotification(`🎉 Ascens Policial! Has assolit el rang de: ${newRank.name} (${newRank.categoryName})`);
       confetti({
         particleCount: 140,
@@ -185,13 +220,12 @@ export default function App() {
       ...currentUser,
       merits: currentUser.merits - shield.preuMerits,
       unlockedShieldIds: updatedUnlocked,
-      equippedShieldId: shield.id // auto-equip upon purchase
+      equippedShieldId: shield.id
     };
     setCurrentUser(updatedUser);
     await syncUserProfileUpdate(updatedUser);
   };
 
-  // If auth is still checking initial state
   if (!authChecked) {
     return (
       <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-white p-4">
@@ -201,18 +235,24 @@ export default function App() {
     );
   }
 
-  // Mandatory Authentication Gate: User MUST login to access the game
   if (!currentUser) {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center relative">
-        <AuthModal onLoginSuccess={(profile) => setCurrentUser(profile)} />
+        <AuthModal onLoginSuccess={(profile) => {
+          setCurrentUser(profile);
+          const uid = profile.uid || (profile as any).id || '';
+          syncSupabaseProfile({
+            uid,
+            username: profile.displayName || 'Aspirant',
+            total_points: profile.xp ?? 0
+          });
+        }} />
       </div>
     );
   }
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col selection:bg-amber-500 selection:text-slate-950">
-      {/* Authorized Domain Notice for Cloud Run / Preview Environments */}
       {domainAlert && (
         <div className="bg-amber-950/90 border-b border-amber-800/80 text-amber-200 text-xs px-4 py-2.5 flex items-center justify-between gap-3 shadow-md z-40 backdrop-blur">
           <div className="flex items-center gap-2 max-w-4xl truncate">
@@ -247,7 +287,6 @@ export default function App() {
         </div>
       )}
 
-      {/* Rank Up Global Toast */}
       {rankUpNotification && (
         <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 p-4 bg-gradient-to-r from-amber-500 to-amber-600 text-slate-950 font-black rounded-2xl shadow-2xl flex items-center gap-3 border border-white animate-in slide-in-from-top duration-300">
           <Sparkles className="w-6 h-6 shrink-0 text-slate-950" />
@@ -255,7 +294,6 @@ export default function App() {
         </div>
       )}
 
-      {/* Main App Navigation Bar */}
       <Navbar
         user={currentUser}
         activeTab={activeTab}
@@ -264,7 +302,6 @@ export default function App() {
         onOpenAdminPanel={() => setShowAdminModal(true)}
       />
 
-      {/* Main Game Screen View */}
       <main className="flex-1 pb-16">
         {activeTab === 'campanya' && (
           <ModeCampanya
@@ -305,20 +342,6 @@ export default function App() {
         )}
       </main>
 
-      {/* Floating Bottom Quick Action: Import Questions */}
-      <div className="fixed bottom-4 right-4 z-30">
-        <button
-          type="button"
-          onClick={() => setShowImportModal(true)}
-          title="Importar preguntes d'arxius externs"
-          className="px-3.5 py-2.5 bg-slate-900/90 hover:bg-slate-800 text-sky-400 hover:text-sky-300 border border-slate-700/80 rounded-2xl text-xs font-bold flex items-center gap-2 shadow-xl backdrop-blur cursor-pointer transition-all hover:scale-105"
-        >
-          <Upload className="w-4 h-4" />
-          <span className="hidden sm:inline">Importar Preguntes (.json)</span>
-        </button>
-      </div>
-
-      {/* Import Modal */}
       <ImportQuestionsModal
         isOpen={showImportModal}
         onClose={() => setShowImportModal(false)}
@@ -327,7 +350,6 @@ export default function App() {
         }}
       />
 
-      {/* Admin Panel Modal (Exclusive to opossscar@gmail.com / isAdmin) */}
       <AdminPanelModal
         isOpen={showAdminModal}
         onClose={() => setShowAdminModal(false)}

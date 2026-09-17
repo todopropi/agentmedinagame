@@ -16,6 +16,7 @@ import {
   getDoc, 
   setDoc, 
   updateDoc, 
+  deleteDoc,
   collection, 
   query, 
   orderBy, 
@@ -24,9 +25,9 @@ import {
   onSnapshot,
   Firestore
 } from 'firebase/firestore';
-import { UserProfile, DuelGame, HeadToHeadRecord } from './types';
+import { UserProfile, DuelGame, HeadToHeadRecord, SpecializedShield } from './types';
 import { calculateRank } from './data/ranks';
-import { DEFAULT_SHIELD_ID } from './data/badges';
+import { DEFAULT_SHIELD_ID, SPECIALIZED_SHIELDS } from './data/badges';
 
 // Helper to safely resolve Firebase configuration even if env keys were swapped
 function resolveFirebaseConfig() {
@@ -40,22 +41,11 @@ function resolveFirebaseConfig() {
     env.VITE_FIREBASE_APP_ID
   ].filter(Boolean) as string[];
 
-  // 1. apiKey: starts with AIza
   const apiKey = rawValues.find(v => v.startsWith('AIza')) || env.VITE_FIREBASE_API_KEY || '';
-
-  // 2. appId: format 1:NUMBERS:web:HEX
   const appId = rawValues.find(v => v.startsWith('1:') && v.includes(':web:')) || env.VITE_FIREBASE_APP_ID || '';
-
-  // 3. messagingSenderId: purely digits
   const messagingSenderId = rawValues.find(v => /^\d+$/.test(v)) || env.VITE_FIREBASE_MESSAGING_SENDER_ID || '';
-
-  // 4. authDomain: domain ending with .firebaseapp.com
   const authDomain = rawValues.find(v => v.endsWith('.firebaseapp.com')) || env.VITE_FIREBASE_AUTH_DOMAIN || 'agent-medina-game.firebaseapp.com';
-
-  // 5. storageBucket: domain containing appspot.com or firebasestorage.app
   const storageBucket = rawValues.find(v => v.includes('.appspot.com') || v.includes('.firebasestorage.app')) || env.VITE_FIREBASE_STORAGE_BUCKET || 'agent-medina-game.firebasestorage.app';
-
-  // 6. projectId: clean slug without dots or colons
   const projectId = rawValues.find(v => v === 'agent-medina-game' || (!v.includes('.') && !v.includes(':') && !/^\d+$/.test(v) && !v.startsWith('AIza'))) || env.VITE_FIREBASE_PROJECT_ID || 'agent-medina-game';
 
   return {
@@ -114,14 +104,13 @@ if (isFirebaseConfigured) {
   }
 }
 
-// Local Storage Keys for offline resilience
+// Local Storage Keys
 const LOCAL_USER_PREFIX = 'agent_medina_user_';
 const LOCAL_GAMES_PREFIX = 'agent_medina_duels_';
 const LOCAL_H2H_PREFIX = 'agent_medina_h2h_';
 const LOCAL_LEADERBOARD_KEY = 'agent_medina_leaderboard_cache';
 const LAST_ACTIVE_UID_KEY = 'agent_medina_last_uid';
 
-// Helper to get local user by current active UID (or passed UID)
 export function getStoredLocalUser(uid?: string): UserProfile | null {
   try {
     const targetUid = uid || localStorage.getItem(LAST_ACTIVE_UID_KEY);
@@ -159,7 +148,6 @@ export function getStoredLeaderboard(): UserProfile[] {
   }
 }
 
-// Build standard default user profile
 export function createDefaultProfile(uid: string, email: string, displayName: string, photoURL?: string): UserProfile {
   const isAdmin = email.toLowerCase().trim() === 'opossscar@gmail.com';
   return {
@@ -167,8 +155,8 @@ export function createDefaultProfile(uid: string, email: string, displayName: st
     email,
     displayName: displayName || email.split('@')[0] || 'Aspirant Medina',
     photoURL: photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${uid}`,
-    xp: 100, // welcome bonus
-    merits: 25, // initial budget: requires playing & winning to buy badges
+    xp: 100,
+    merits: 25,
     rank: calculateRank(100),
     equippedShieldId: DEFAULT_SHIELD_ID,
     unlockedShieldIds: [DEFAULT_SHIELD_ID],
@@ -180,10 +168,9 @@ export function createDefaultProfile(uid: string, email: string, displayName: st
   };
 }
 
-// AUTH API
 export async function loginWithGoogle(): Promise<UserProfile> {
   if (!isFirebaseConfigured || !auth || !db) {
-    throw new Error('Firebase no està configurat amb claus vàlides. Comprova VITE_FIREBASE_API_KEY.');
+    throw new Error('Firebase no està configurat amb claus vàlides.');
   }
 
   try {
@@ -192,7 +179,6 @@ export async function loginWithGoogle(): Promise<UserProfile> {
     const result = await signInWithPopup(auth, provider);
     const fbUser = result.user;
     
-    // Fetch profile from Firestore
     const userDocRef = doc(db, 'users', fbUser.uid);
     const snap = await getDoc(userDocRef);
 
@@ -216,38 +202,20 @@ export async function loginWithGoogle(): Promise<UserProfile> {
   } catch (authError: any) {
     const errCode = authError?.code || '';
     const errMsg = String(authError?.message || '');
-    const isUnauthorizedDomain = 
-      errCode === 'auth/unauthorized-domain' || 
-      errMsg.includes('auth/unauthorized-domain') ||
-      errMsg.includes('unauthorized-domain');
-
-    if (isUnauthorizedDomain) {
+    if (errCode === 'auth/unauthorized-domain' || errMsg.includes('unauthorized-domain')) {
       const currentDomain = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
-      console.warn(
-        `[Firebase Auth] El domini "${currentDomain}" no està autoritzat a Firebase (auth/unauthorized-domain).`
-      );
-
-      setUnauthorizedDomainAlert({
-        domain: currentDomain,
-        projectId: firebaseConfig.projectId
-      });
-
-      throw new Error(`El domini "${currentDomain}" no està autoritzat a Firebase Console > Authentication > Settings > Authorized domains.`);
+      setUnauthorizedDomainAlert({ domain: currentDomain, projectId: firebaseConfig.projectId });
+      throw new Error(`El domini "${currentDomain}" no està autoritzat.`);
     }
-
-    if (errCode === 'auth/popup-closed-by-user' || errCode === 'auth/cancelled-popup-request') {
+    if (errCode === 'auth/popup-closed-by-user') {
       throw new Error('S\'ha tancat la finestra d\'inici de sessió.');
     }
-
-    throw new Error(authError?.message || 'Error en iniciar sessió amb Google.');
+    throw new Error(authError?.message || 'Error en iniciar sessió.');
   }
 }
 
 export async function loginWithEmailPassword(email: string, pass: string): Promise<UserProfile> {
-  if (!isFirebaseConfigured || !auth || !db) {
-    throw new Error('Firebase no està configurat amb claus vàlides.');
-  }
-
+  if (!isFirebaseConfigured || !auth || !db) throw new Error('Firebase no està configurat.');
   const cred = await signInWithEmailAndPassword(auth, email, pass);
   const userDocRef = doc(db, 'users', cred.user.uid);
   const snap = await getDoc(userDocRef);
@@ -264,10 +232,7 @@ export async function loginWithEmailPassword(email: string, pass: string): Promi
 }
 
 export async function registerWithEmailPassword(email: string, pass: string, name: string): Promise<UserProfile> {
-  if (!isFirebaseConfigured || !auth || !db) {
-    throw new Error('Firebase no està configurat amb claus vàlides.');
-  }
-
+  if (!isFirebaseConfigured || !auth || !db) throw new Error('Firebase no està configurat.');
   const cred = await createUserWithEmailAndPassword(auth, email, pass);
   const newProfile = createDefaultProfile(cred.user.uid, email, name);
   await setDoc(doc(db, 'users', cred.user.uid), newProfile);
@@ -291,16 +256,10 @@ export async function loginAsGuest(customName?: string): Promise<UserProfile> {
 
 export async function logoutUser(): Promise<void> {
   if (isFirebaseConfigured && auth) {
-    try {
-      await fbSignOut(auth);
-    } catch (e) {
-      console.warn('Firebase logout notice:', e);
-    }
+    try { await fbSignOut(auth); } catch (e) {}
   }
   const currentUid = localStorage.getItem(LAST_ACTIVE_UID_KEY);
-  if (currentUid) {
-    localStorage.removeItem(LOCAL_USER_PREFIX + currentUid);
-  }
+  if (currentUid) localStorage.removeItem(LOCAL_USER_PREFIX + currentUid);
   localStorage.removeItem(LAST_ACTIVE_UID_KEY);
 }
 export const logOutUser = logoutUser;
@@ -308,7 +267,7 @@ export const logOutUser = logoutUser;
 export function initAuthListener(callback: (user: UserProfile | null) => void): () => void {
   if (isFirebaseConfigured && auth && db) {
     try {
-      const unsub = auth.onAuthStateChanged(async (fbUser) => {
+      return auth.onAuthStateChanged(async (fbUser) => {
         if (fbUser) {
           try {
             const snap = await getDoc(doc(db, 'users', fbUser.uid));
@@ -318,9 +277,7 @@ export function initAuthListener(callback: (user: UserProfile | null) => void): 
               callback(prof);
               return;
             }
-          } catch (err) {
-            console.warn('Error reading user doc on auth change:', err);
-          }
+          } catch (err) {}
           const newProf = createDefaultProfile(
             fbUser.uid,
             fbUser.email || 'aspirant@agentmedina.cat',
@@ -330,21 +287,13 @@ export function initAuthListener(callback: (user: UserProfile | null) => void): 
           saveStoredLocalUser(newProf);
           callback(newProf);
         } else {
-          // Sense sessió activa de Firebase: no obrir cap perfil simulat
           callback(null);
         }
-      }, (err) => {
-        console.warn('Firebase onAuthStateChanged notice:', err);
-        callback(null);
-      });
-      return unsub;
+      }, () => callback(null));
     } catch (e) {
-      console.warn('Firebase auth listener init notice:', e);
       callback(null);
     }
   }
-
-  // Si Firebase no està configurat, demanar inici de sessió
   callback(null);
   return () => {};
 }
@@ -358,21 +307,16 @@ export async function loadUserProfile(uid: string): Promise<UserProfile | null> 
         saveStoredLocalUser(prof);
         return prof;
       }
-    } catch (e) {
-      console.warn('Error loading user profile:', e);
-    }
+    } catch (e) {}
   }
   return getStoredLocalUser(uid);
 }
 
-// PROFILE UPDATE API (XP, Merits, Shield, Rank)
 export async function syncUserProfileUpdate(updated: Partial<UserProfile> & { uid: string }): Promise<UserProfile> {
   const current = getStoredLocalUser(updated.uid);
   if (!current) throw new Error('No user logged in');
 
   const merged: UserProfile = { ...current, ...updated };
-  
-  // Recalculate rank if XP changed
   if (updated.xp !== undefined) {
     merged.rank = calculateRank(merged.xp);
   }
@@ -382,15 +326,12 @@ export async function syncUserProfileUpdate(updated: Partial<UserProfile> & { ui
   if (isFirebaseConfigured && db) {
     try {
       await setDoc(doc(db, 'users', merged.uid), merged, { merge: true });
-    } catch (e) {
-      console.warn('Firestore sync failed, saved locally:', e);
-    }
+    } catch (e) {}
   }
 
   return merged;
 }
 
-// DUELS & HEAD-TO-HEAD FIRESTORE / LOCAL ENGINE
 export async function getDuelsList(userUid: string): Promise<DuelGame[]> {
   const raw = localStorage.getItem(LOCAL_GAMES_PREFIX + userUid);
   const localGames: DuelGame[] = raw ? JSON.parse(raw) : [];
@@ -412,9 +353,7 @@ export async function getDuelsList(userUid: string): Promise<DuelGame[]> {
       const result = Array.from(map.values()).sort((a, b) => (b.lastUpdated || 0) - (a.lastUpdated || 0));
       localStorage.setItem(LOCAL_GAMES_PREFIX + userUid, JSON.stringify(result));
       return result;
-    } catch (e) {
-      console.warn('Firestore duels fetch fallback to local:', e);
-    }
+    } catch (e) {}
   }
 
   return localGames;
@@ -442,12 +381,9 @@ export async function createDuelGame(user: UserProfile): Promise<DuelGame> {
   if (isFirebaseConfigured && db) {
     try {
       await setDoc(doc(db, 'games', gameId), newGame);
-    } catch (e) {
-      console.warn('Firestore create game notice:', e);
-    }
+    } catch (e) {}
   }
 
-  // Store in user-specific local storage
   const current = await getDuelsList(user.uid);
   const updated = [newGame, ...current.filter(g => g.id !== gameId)];
   localStorage.setItem(LOCAL_GAMES_PREFIX + user.uid, JSON.stringify(updated));
@@ -473,9 +409,7 @@ export async function joinDuelGame(gameIdOrCode: string, guestUser: UserProfile)
           }
         });
       }
-    } catch (e) {
-      console.warn('Firestore join game search notice:', e);
-    }
+    } catch (e) {}
   }
 
   if (!foundGame) {
@@ -485,7 +419,6 @@ export async function joinDuelGame(gameIdOrCode: string, guestUser: UserProfile)
 
   if (!foundGame) return null;
 
-  // Join as guest if not yet joined
   if (!foundGame.guestPlayerUid && foundGame.hostPlayerUid !== guestUser.uid) {
     foundGame.guestPlayerUid = guestUser.uid;
     foundGame.guestPlayerName = guestUser.displayName;
@@ -500,9 +433,7 @@ export async function joinDuelGame(gameIdOrCode: string, guestUser: UserProfile)
     if (isFirebaseConfigured && db) {
       try {
         await setDoc(doc(db, 'games', foundGame.id), foundGame, { merge: true });
-      } catch (e) {
-        console.warn('Firestore update join notice:', e);
-      }
+      } catch (e) {}
     }
 
     const localList = await getDuelsList(guestUser.uid);
@@ -519,12 +450,9 @@ export async function saveDuelGameUpdate(game: DuelGame): Promise<void> {
   if (isFirebaseConfigured && db) {
     try {
       await setDoc(doc(db, 'games', game.id), game, { merge: true });
-    } catch (e) {
-      console.warn('Firestore game update notice:', e);
-    }
+    } catch (e) {}
   }
 
-  // Update in host local cache
   if (game.hostPlayerUid) {
     const rawHost = localStorage.getItem(LOCAL_GAMES_PREFIX + game.hostPlayerUid);
     const listHost: DuelGame[] = rawHost ? JSON.parse(rawHost) : [];
@@ -533,7 +461,6 @@ export async function saveDuelGameUpdate(game: DuelGame): Promise<void> {
     localStorage.setItem(LOCAL_GAMES_PREFIX + game.hostPlayerUid, JSON.stringify(listHost));
   }
 
-  // Update in guest local cache
   if (game.guestPlayerUid) {
     const rawGuest = localStorage.getItem(LOCAL_GAMES_PREFIX + game.guestPlayerUid);
     const listGuest: DuelGame[] = rawGuest ? JSON.parse(rawGuest) : [];
@@ -542,13 +469,11 @@ export async function saveDuelGameUpdate(game: DuelGame): Promise<void> {
     localStorage.setItem(LOCAL_GAMES_PREFIX + game.guestPlayerUid, JSON.stringify(listGuest));
   }
 
-  // If game finished, record Head-to-Head
   if (game.status === 'finished' && game.winnerUid && game.guestPlayerUid) {
     await recordHeadToHeadVictory(game.hostPlayerUid, game.hostPlayerName, game.guestPlayerUid, game.guestPlayerName || 'Convidat', game.winnerUid);
   }
 }
 
-// HEAD TO HEAD (VS HISTORY)
 export async function getHeadToHeadRecords(userUid: string): Promise<HeadToHeadRecord[]> {
   if (isFirebaseConfigured && db) {
     try {
@@ -563,9 +488,7 @@ export async function getHeadToHeadRecords(userUid: string): Promise<HeadToHeadR
       });
       localStorage.setItem(LOCAL_H2H_PREFIX + userUid, JSON.stringify(list));
       return list;
-    } catch (e) {
-      console.warn('Firestore H2H fallback:', e);
-    }
+    } catch (e) {}
   }
 
   try {
@@ -601,12 +524,9 @@ export async function recordHeadToHeadVictory(p1Uid: string, p1Name: string, p2U
         rec = existing;
       }
       await setDoc(doc(db, 'headToHead', pairId), rec, { merge: true });
-    } catch (e) {
-      console.warn('Firestore H2H sync notice:', e);
-    }
+    } catch (e) {}
   }
 
-  // Update both players' local caches
   for (const uid of [p1Uid, p2Uid]) {
     const raw = localStorage.getItem(LOCAL_H2H_PREFIX + uid);
     const list: HeadToHeadRecord[] = raw ? JSON.parse(raw) : [];
@@ -616,11 +536,9 @@ export async function recordHeadToHeadVictory(p1Uid: string, p1Name: string, p2U
   }
 }
 
-// REGISTERED & ONLINE USERS API
 export async function getAllRegisteredUsers(currentUserUid?: string): Promise<UserProfile[]> {
   const usersMap = new Map<string, UserProfile>();
 
-  // Fetch real registered users from Firestore
   if (isFirebaseConfigured && db) {
     try {
       const q = query(collection(db, 'users'), limit(100));
@@ -628,19 +546,15 @@ export async function getAllRegisteredUsers(currentUserUid?: string): Promise<Us
       snap.forEach(d => {
         const u = d.data() as UserProfile;
         if (u && u.uid) {
-          const isOnline = u.lastLogin ? Date.now() - u.lastLogin < 15 * 60 * 1000 : false;
+          const isOnline = u.lastLogin ? Date.now() - u.lastLogin < 5 * 60 * 1000 : false;
           usersMap.set(u.uid, { ...u, isOnline });
         }
       });
-      // Cache leaderboard from real registered users
       const realUsers = Array.from(usersMap.values()).sort((a, b) => (b.xp || 0) - (a.xp || 0));
       localStorage.setItem(LOCAL_LEADERBOARD_KEY, JSON.stringify(realUsers));
-    } catch (e) {
-      console.warn('Firestore users fetch notice:', e);
-    }
+    } catch (e) {}
   }
 
-  // Fallback to cached real users if Firestore fails
   if (usersMap.size === 0) {
     try {
       const raw = localStorage.getItem(LOCAL_LEADERBOARD_KEY);
@@ -650,21 +564,15 @@ export async function getAllRegisteredUsers(currentUserUid?: string): Promise<Us
           if (u && u.uid) {
             usersMap.set(u.uid, {
               ...u,
-              isOnline: u.lastLogin ? Date.now() - u.lastLogin < 15 * 60 * 1000 : false
+              isOnline: u.lastLogin ? Date.now() - u.lastLogin < 5 * 60 * 1000 : false
             });
           }
         }
       }
-    } catch (e) {
-      console.warn('Cached users fetch notice:', e);
-    }
+    } catch (e) {}
   }
 
-  // Filter out current user if passed
   const list = Array.from(usersMap.values());
-  if (currentUserUid) {
-    return list.filter(u => u.uid !== currentUserUid);
-  }
   return list;
 }
 
@@ -713,12 +621,9 @@ export async function createDirectChallengeGame(currentUser: UserProfile, target
   if (isFirebaseConfigured && db) {
     try {
       await setDoc(doc(db, 'games', gameId), newGame);
-    } catch (e) {
-      console.warn('Firestore direct challenge notice:', e);
-    }
+    } catch (e) {}
   }
 
-  // Save to current user's duel list
   const current = await getDuelsList(currentUser.uid);
   const updated = [newGame, ...current.filter(g => g.id !== gameId)];
   localStorage.setItem(LOCAL_GAMES_PREFIX + currentUser.uid, JSON.stringify(updated));
@@ -726,12 +631,11 @@ export async function createDirectChallengeGame(currentUser: UserProfile, target
   return newGame;
 }
 
-// ==========================================
-// NUEVAS FUNCIONES DE TIEMPO REAL (ONSNAPSHOT)
-// ==========================================
-
-// 1. Escuchar lista de usuarios registrados en tiempo real
-export function subscribeToUsers(currentUserUid: string | undefined, onUsersUpdate: (users: UserProfile[]) => void): () => void {
+// FUNCIONES DE TIEMPO REAL
+export function subscribeToUsers(
+  currentUserUid: string | undefined, 
+  onUsersUpdate: (users: UserProfile[]) => void
+): () => void {
   if (!isFirebaseConfigured || !db) {
     onUsersUpdate([]);
     return () => {};
@@ -746,13 +650,12 @@ export function subscribeToUsers(currentUserUid: string | undefined, onUsersUpda
     snapshot.forEach((docSnap) => {
       const u = docSnap.data() as UserProfile;
       if (u && u.uid) {
-        // Marcado como online si su último login/latido fue hace menos de 5 min
         const isOnline = u.lastLogin ? (now - u.lastLogin) < 5 * 60 * 1000 : false;
-        if (u.uid !== currentUserUid) {
-          users.push({ ...u, isOnline });
-        }
+        users.push({ ...u, isOnline });
       }
     });
+
+    users.sort((a, b) => (b.xp || 0) - (a.xp || 0));
 
     localStorage.setItem(LOCAL_LEADERBOARD_KEY, JSON.stringify(users));
     onUsersUpdate(users);
@@ -761,24 +664,20 @@ export function subscribeToUsers(currentUserUid: string | undefined, onUsersUpda
   });
 }
 
-// 2. Mantener la presencia (Latido para marcar usuario en línea)
 export function startOnlinePresence(uid: string): () => void {
   if (!isFirebaseConfigured || !db || !uid) return () => {};
 
   const updatePresence = async () => {
     try {
       await updateDoc(doc(db, 'users', uid), { lastLogin: Date.now() });
-    } catch (e) {
-      console.warn("Error enviando latido de presencia:", e);
-    }
+    } catch (e) {}
   };
 
   updatePresence();
-  const intervalId = setInterval(updatePresence, 2 * 60 * 1000); // Latido cada 2 min
+  const intervalId = setInterval(updatePresence, 2 * 60 * 1000);
   return () => clearInterval(intervalId);
 }
 
-// 3. Escuchar retos y partidas dirigidas a mí en tiempo real
 export function subscribeToMyChallenges(currentUserUid: string, onChallengeReceived: (game: DuelGame) => void): () => void {
   if (!isFirebaseConfigured || !db || !currentUserUid) return () => {};
 
@@ -794,4 +693,158 @@ export function subscribeToMyChallenges(currentUserUid: string, onChallengeRecei
       }
     });
   });
+}
+
+/**
+ * Elimina un duel tant de Firebase Firestore com del localStorage de l'usuari
+ */
+export async function deleteDuelGame(gameId: string, userUid: string): Promise<void> {
+  if (isFirebaseConfigured && db && gameId) {
+    try {
+      await deleteDoc(doc(db, 'games', gameId));
+    } catch (e) {
+      console.warn('Firebase delete duel warning:', e);
+    }
+  }
+  if (userUid) {
+    try {
+      const raw = localStorage.getItem(LOCAL_GAMES_PREFIX + userUid);
+      if (raw) {
+        const list: DuelGame[] = JSON.parse(raw);
+        const filtered = list.filter(g => g.id !== gameId);
+        localStorage.setItem(LOCAL_GAMES_PREFIX + userUid, JSON.stringify(filtered));
+      }
+    } catch (e) {}
+  }
+}
+
+/**
+ * SINCRONITZACIÓ EN TEMPS REAL DEL CATÀLEG DE LA BOTIGA D'ESCUTS
+ */
+const LOCAL_SHOP_ITEMS_KEY = 'agent_medina_shop_catalog_v1';
+
+export function getLocalShopItems(): SpecializedShield[] {
+  try {
+    const raw = localStorage.getItem(LOCAL_SHOP_ITEMS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed;
+      }
+    }
+  } catch (e) {}
+  return SPECIALIZED_SHIELDS;
+}
+
+export function subscribeToShopCatalog(onUpdate: (items: SpecializedShield[]) => void): () => void {
+  // Emissió inicial immediata des de memòria cau / catàleg base
+  const initial = getLocalShopItems();
+  onUpdate(initial);
+
+  // BroadcastChannel per comunicació entre pestanyes / clients
+  let channel: BroadcastChannel | null = null;
+  try {
+    if (typeof BroadcastChannel !== 'undefined') {
+      channel = new BroadcastChannel('agent_medina_shop_channel');
+      channel.onmessage = (event) => {
+        if (event.data && Array.isArray(event.data.items)) {
+          onUpdate(event.data.items);
+        }
+      };
+    }
+  } catch (e) {}
+
+  // Sincronització via storage events
+  const handleStorage = (e: StorageEvent) => {
+    if (e.key === LOCAL_SHOP_ITEMS_KEY && e.newValue) {
+      try {
+        const parsed = JSON.parse(e.newValue);
+        if (Array.isArray(parsed)) onUpdate(parsed);
+      } catch (err) {}
+    }
+  };
+  window.addEventListener('storage', handleStorage);
+
+  let unsubFirestore = () => {};
+
+  if (isFirebaseConfigured && db) {
+    try {
+      const q = query(collection(db, 'shop_items'));
+      unsubFirestore = onSnapshot(q, (snapshot) => {
+        if (!snapshot.empty) {
+          const items: SpecializedShield[] = [];
+          snapshot.forEach((docSnap) => {
+            const data = docSnap.data() as SpecializedShield;
+            if (data && data.id) {
+              items.push(data);
+            }
+          });
+          if (items.length > 0) {
+            localStorage.setItem(LOCAL_SHOP_ITEMS_KEY, JSON.stringify(items));
+            onUpdate(items);
+          }
+        }
+      }, (error) => {
+        console.warn('Firestore shop_items onSnapshot warning:', error);
+      });
+    } catch (e) {
+      console.warn('subscribeToShopCatalog Firestore error:', e);
+    }
+  }
+
+  return () => {
+    unsubFirestore();
+    if (channel) {
+      try { channel.close(); } catch (e) {}
+    }
+    window.removeEventListener('storage', handleStorage);
+  };
+}
+
+export async function saveShopItemRemote(item: SpecializedShield): Promise<void> {
+  const current = getLocalShopItems();
+  const index = current.findIndex(s => s.id === item.id);
+  const updated = index >= 0
+    ? current.map(s => s.id === item.id ? item : s)
+    : [...current, item];
+
+  localStorage.setItem(LOCAL_SHOP_ITEMS_KEY, JSON.stringify(updated));
+
+  try {
+    if (typeof BroadcastChannel !== 'undefined') {
+      const ch = new BroadcastChannel('agent_medina_shop_channel');
+      ch.postMessage({ items: updated });
+      ch.close();
+    }
+  } catch (e) {}
+
+  if (isFirebaseConfigured && db) {
+    try {
+      await setDoc(doc(db, 'shop_items', item.id), item, { merge: true });
+    } catch (e) {
+      console.warn('Error saving shop item to Firestore:', e);
+    }
+  }
+}
+
+export async function deleteShopItemRemote(itemId: string): Promise<void> {
+  const current = getLocalShopItems();
+  const updated = current.filter(s => s.id !== itemId);
+  localStorage.setItem(LOCAL_SHOP_ITEMS_KEY, JSON.stringify(updated));
+
+  try {
+    if (typeof BroadcastChannel !== 'undefined') {
+      const ch = new BroadcastChannel('agent_medina_shop_channel');
+      ch.postMessage({ items: updated });
+      ch.close();
+    }
+  } catch (e) {}
+
+  if (isFirebaseConfigured && db) {
+    try {
+      await deleteDoc(doc(db, 'shop_items', itemId));
+    } catch (e) {
+      console.warn('Error deleting shop item from Firestore:', e);
+    }
+  }
 }

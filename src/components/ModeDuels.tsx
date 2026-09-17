@@ -8,8 +8,17 @@ import {
   getHeadToHeadRecords,
   getStoredLeaderboard,
   getAllRegisteredUsers,
-  createDirectChallengeGame
+  createDirectChallengeGame,
+  deleteDuelGame
 } from '../firebase';
+import { 
+  fetchProfilesForChallenges, 
+  createMatchInSupabase, 
+  updateMatchTurnInSupabase,
+  fetchUserMatches,
+  deleteMatchInSupabase
+} from '../../supabase';
+import { calculateRank } from '../data/ranks';
 import { EscutMossosStripes } from './EscutMossosStripes';
 import { ShieldRenderer } from './ShieldRenderer';
 import { AudioEngine } from '../utils/audio';
@@ -171,12 +180,112 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
   }, [user.uid]);
 
   const loadDuelsData = async () => {
-    const list = await getDuelsList(user.uid);
-    setGameList(list);
-    const h2h = await getHeadToHeadRecords(user.uid);
+    const [list, h2h, users, supabaseProfiles, supabaseMatches] = await Promise.all([
+      getDuelsList(user.uid),
+      getHeadToHeadRecords(user.uid),
+      getAllRegisteredUsers(user.uid),
+      fetchProfilesForChallenges(user.uid),
+      fetchUserMatches(user.uid)
+    ]);
     setHeadToHead(h2h);
-    const users = await getAllRegisteredUsers(user.uid);
-    setRegisteredUsers(users);
+
+    const userMap = new Map<string, UserProfile>();
+    if (Array.isArray(supabaseProfiles)) {
+      for (const sp of supabaseProfiles) {
+        if (!sp || sp.id === user.uid) continue;
+        userMap.set(sp.id, {
+          uid: sp.id,
+          displayName: sp.username || 'Aspirant',
+          email: '',
+          xp: sp.total_points || 0,
+          merits: Math.floor((sp.total_points || 0) / 10),
+          rank: calculateRank(sp.total_points || 0),
+          equippedShieldId: 'escut_basico',
+          unlockedShieldIds: ['escut_basico'],
+          failedQuestionIds: [],
+          savedQuestionIds: [],
+          photoURL: sp.avatar_url,
+          isOnline: true
+        });
+      }
+    }
+    if (Array.isArray(users)) {
+      for (const u of users) {
+        userMap.set(u.uid, u);
+      }
+    }
+    setRegisteredUsers(Array.from(userMap.values()));
+
+    // Merge games: local/Firebase + Supabase matches
+    const gamesMap = new Map<string, DuelGame>();
+    list.forEach(g => gamesMap.set(g.id, g));
+
+    if (Array.isArray(supabaseMatches) && supabaseMatches.length > 0) {
+      console.log(`[ModeDuels] S'han obtingut ${supabaseMatches.length} partides des de Supabase:`, supabaseMatches);
+      for (const m of supabaseMatches) {
+        if (!m || !m.id) continue;
+        const matchId = String(m.id);
+        const hostProfile = userMap.get(m.player1_id);
+        const guestProfile = userMap.get(m.player2_id);
+        const hostName = hostProfile?.displayName || 
+          (m.player1_id === user.uid ? (user.displayName || 'Aspirant') : (m.state?.hostPlayerName || 'Aspirant'));
+        const guestName = guestProfile?.displayName || 
+          (m.player2_id === user.uid ? (user.displayName || 'Aspirant') : (m.state?.guestPlayerName || 'Oponent'));
+
+        const existing = gamesMap.get(matchId);
+        if (existing) {
+          existing.currentTurnUid = m.current_turn || existing.currentTurnUid;
+          existing.status = m.status === 'finished' ? 'finished' : 'active';
+          if (typeof m.score_p1 === 'number') existing.hostRedStripes = m.score_p1;
+          if (typeof m.state?.score_p2 === 'number') existing.guestRedStripes = m.state.score_p2;
+          if (m.updated_at) existing.lastUpdated = new Date(m.updated_at).getTime();
+        } else {
+          gamesMap.set(matchId, {
+            id: matchId,
+            hostPlayerUid: m.player1_id,
+            hostPlayerName: hostName,
+            hostPlayerAvatar: hostProfile?.photoURL,
+            hostPlayerShieldId: m.state?.hostPlayerShieldId || 'escut_basico',
+            hostRedStripes: typeof m.score_p1 === 'number' ? m.score_p1 : 0,
+            guestPlayerUid: m.player2_id,
+            guestPlayerName: guestName,
+            guestPlayerAvatar: guestProfile?.photoURL,
+            guestPlayerShieldId: m.state?.guestPlayerShieldId || 'escut_basico',
+            guestRedStripes: typeof m.state?.score_p2 === 'number' ? m.state.score_p2 : 0,
+            currentTurnUid: m.current_turn || m.player1_id,
+            status: m.status === 'finished' ? 'finished' : 'active',
+            consecutiveCorrect: m.state?.consecutiveCorrect || { [m.player1_id]: 0, [m.player2_id]: 0 },
+            lastUpdated: m.updated_at ? new Date(m.updated_at).getTime() : Date.now(),
+            shareCode: m.state?.shareCode || matchId.substring(0, 6).toUpperCase()
+          });
+        }
+      }
+    }
+
+    const mergedGames = Array.from(gamesMap.values()).sort((a, b) => (b.lastUpdated || 0) - (a.lastUpdated || 0));
+    setGameList(mergedGames);
+
+    // Keep activeGame synchronized if its state changed in Supabase
+    setActiveGame(prev => {
+      if (!prev) return null;
+      const live = gamesMap.get(prev.id);
+      if (live && (
+        live.currentTurnUid !== prev.currentTurnUid || 
+        live.status !== prev.status || 
+        live.hostRedStripes !== prev.hostRedStripes || 
+        live.guestRedStripes !== prev.guestRedStripes
+      )) {
+        return {
+          ...prev,
+          currentTurnUid: live.currentTurnUid,
+          status: live.status,
+          hostRedStripes: live.hostRedStripes,
+          guestRedStripes: live.guestRedStripes,
+          lastUpdated: live.lastUpdated
+        };
+      }
+      return prev;
+    });
   };
 
   // Reusable Wheel Canvas Draw Routine
@@ -416,6 +525,17 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
         onUpdateUserStats(victoryXp, victoryMerits);
       }
 
+      updateMatchTurnInSupabase({
+        matchId: activeGame.id,
+        currentTurn: activeGame.currentTurnUid,
+        scoreP1: isHost ? myStripes : activeGame.hostRedStripes,
+        state: {
+          score_p2: !isHost ? myStripes : activeGame.guestRedStripes,
+          consecutiveCorrect: activeGame.consecutiveCorrect
+        },
+        status: isWinner ? 'finished' : 'active'
+      });
+
       await saveDuelGameUpdate(updatedGame);
       setActiveGame(updatedGame);
       await loadDuelsData();
@@ -436,6 +556,17 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
         },
         lastUpdated: Date.now()
       };
+
+      updateMatchTurnInSupabase({
+        matchId: activeGame.id,
+        currentTurn: rivalUid,
+        scoreP1: activeGame.hostRedStripes,
+        state: {
+          score_p2: activeGame.guestRedStripes,
+          consecutiveCorrect: activeGame.consecutiveCorrect
+        },
+        status: 'active'
+      });
 
       await saveDuelGameUpdate(updatedGame);
       setActiveGame(updatedGame);
@@ -503,6 +634,10 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
 
     // Guardar a storage local i sincronitzar
     try {
+      createMatchInSupabase({
+        challengerId: user.uid,
+        opponentId: bot.id
+      });
       await saveDuelGameUpdate(botGame);
       await loadDuelsData();
     } catch (e) {
@@ -515,8 +650,16 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
     AudioEngine.playClick();
     setIsChallengingUser(targetUser.uid);
     try {
+      const spMatch = await createMatchInSupabase({
+        challengerId: user.uid,
+        opponentId: targetUser.uid
+      });
       const challengeGame = await createDirectChallengeGame(user, targetUser);
+      if (spMatch && spMatch.id) {
+        challengeGame.id = String(spMatch.id);
+      }
       setActiveGame(challengeGame);
+      await saveDuelGameUpdate(challengeGame);
       setShowNewMatchModal(false);
       await loadDuelsData();
     } catch (e) {
@@ -619,6 +762,13 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
             lastUpdated: Date.now()
           };
 
+          updateMatchTurnInSupabase({
+            matchId: activeGame.id,
+            currentTurn: isBotWinner ? activeGame.currentTurnUid : user.uid,
+            scoreP1: isBotHost ? botStripes : activeGame.hostRedStripes,
+            status: isBotWinner ? 'finished' : 'active'
+          });
+
           await saveDuelGameUpdate(updatedGame);
           setActiveGame(updatedGame);
           await loadDuelsData();
@@ -639,6 +789,13 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
             },
             lastUpdated: Date.now()
           };
+
+          updateMatchTurnInSupabase({
+            matchId: activeGame.id,
+            currentTurn: user.uid,
+            scoreP1: activeGame.hostRedStripes,
+            status: 'active'
+          });
 
           await saveDuelGameUpdate(updatedGame);
           setActiveGame(updatedGame);
@@ -701,6 +858,25 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
     navigator.clipboard.writeText(activeGame.shareCode);
     setCopiedCode(true);
     setTimeout(() => setCopiedCode(false), 2000);
+  };
+
+  const handleDeleteWaitingMatch = async (gameId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!window.confirm('Vols cancel·lar i eliminar aquest duel en espera?')) {
+      return;
+    }
+    AudioEngine.playClick();
+    try {
+      await deleteMatchInSupabase(gameId);
+      await deleteDuelGame(gameId, user.uid);
+      setGameList(prev => prev.filter(g => g.id !== gameId));
+      if (activeGame?.id === gameId) {
+        setActiveGame(null);
+      }
+      await loadDuelsData();
+    } catch (err) {
+      console.warn('Error eliminant el duel en espera:', err);
+    }
   };
 
   // Partition matches
@@ -1222,21 +1398,31 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
                         AudioEngine.playClick();
                         setActiveGame(game);
                       }}
-                      className="p-3 bg-slate-900/60 hover:bg-slate-900 border border-slate-800 rounded-2xl cursor-pointer transition-all flex items-center justify-between gap-3 opacity-80"
+                      className="p-3 bg-slate-900/60 hover:bg-slate-900 border border-slate-800 rounded-2xl cursor-pointer transition-all flex items-center justify-between gap-3 opacity-90 group"
                     >
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center text-base">
+                      <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                        <div className="w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center text-base shrink-0">
                           ⏳
                         </div>
-                        <div>
+                        <div className="min-w-0 flex-1">
                           <div className="text-xs font-bold text-slate-300 truncate max-w-[140px]">{rName}</div>
                           <div className="text-[10px] text-slate-500">🛡️ {myS}/4 vs {rivalS}/4</div>
                         </div>
                       </div>
 
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-800 text-amber-400 border border-slate-700">
-                        Esperant que jugui el teu rival
-                      </span>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-800 text-amber-400 border border-slate-700 hidden sm:inline-block">
+                          Esperant que jugui el teu rival
+                        </span>
+                        <button
+                          type="button"
+                          onClick={(e) => handleDeleteWaitingMatch(game.id, e)}
+                          title="Cancel·lar / Eliminar duel"
+                          className="p-1.5 rounded-lg bg-slate-800/90 hover:bg-rose-950 text-slate-400 hover:text-rose-400 border border-slate-700/70 hover:border-rose-500/50 transition-colors cursor-pointer flex items-center justify-center shadow-sm"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
                   );
                 })}
