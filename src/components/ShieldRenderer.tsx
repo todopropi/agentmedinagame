@@ -22,9 +22,10 @@ export const ShieldRenderer: React.FC<ShieldRendererProps> = ({
 }) => {
   const shield = shieldData || SPECIALIZED_SHIELDS.find(s => s.id === shieldId) || SPECIALIZED_SHIELDS[0];
   const uid = React.useId().replace(/:/g, '');
+  const logoSrc = shield.customLogoUrl || shield.imageUrl;
 
   // Render borderless image if requested by admin
-  if (shield.customLogoUrl && shield.hideBorder) {
+  if (logoSrc && shield.hideBorder) {
     const scale = shield.customLogoScale ?? 1.05;
     const roundedClass = 
       shield.logoShape === 'circle' ? 'rounded-full' :
@@ -44,7 +45,7 @@ export const ShieldRenderer: React.FC<ShieldRendererProps> = ({
         >
           <div className="w-full h-full flex items-center justify-center p-0.5">
             <img 
-              src={shield.customLogoUrl} 
+              src={logoSrc} 
               alt={shield.nom} 
               className={`max-w-full max-h-full ${shield.logoFit === 'cover' ? 'w-full h-full object-cover' : 'object-contain'} ${roundedClass}`}
               style={{
@@ -172,11 +173,11 @@ export const ShieldRenderer: React.FC<ShieldRendererProps> = ({
           )}
 
           {/* 3. UNIT SPECIFIC ARTWORK MATCHING USER'S PHOTOS */}
-          {shield.customLogoUrl ? (
+          {logoSrc ? (
             <foreignObject x="12" y="20" width="76" height="76">
               <div className="w-full h-full flex flex-col items-center justify-center p-1 overflow-hidden">
                 <img 
-                  src={shield.customLogoUrl} 
+                  src={logoSrc} 
                   alt={shield.nom} 
                   className={`max-w-full max-h-full ${shield.logoFit === 'cover' ? 'w-full h-full object-cover' : 'object-contain'} rounded-xl drop-shadow-md`}
                   style={{
@@ -489,6 +490,12 @@ export const ShieldRenderer: React.FC<ShieldRendererProps> = ({
                  shield.id === 'escut_llegenda_ambit_c' ? 'LLEGENDA C' :
                  shield.id === 'escut_llegenda_actualitat' ? 'LLEGENDA ACT' :
                  shield.id === 'escut_llegenda_ispc' ? 'LLEGENDA ISPC' :
+                 shield.id === 'escut_suprem_ambit_a' ? 'SUPREM A' :
+                 shield.id === 'escut_suprem_ambit_b' ? 'SUPREM B' :
+                 shield.id === 'escut_suprem_ambit_c' ? 'SUPREM C' :
+                 shield.id === 'escut_suprem_actualitat' ? 'SUPREM ACT' :
+                 shield.id === 'escut_suprem_ispc' ? 'SUPREM ISPC' :
+                 shield.id?.includes('suprem') ? 'SUPREM 150' :
                  'LLEGENDA 100'}
               </text>
               <text x="0" y="44" textAnchor="middle" fill="#fde047" fontSize="4.5" fontWeight="800" fontFamily="sans-serif">mossos d'esquadra</text>

@@ -30,7 +30,7 @@ export const ShopItemAdminModal: React.FC<ShopItemAdminModalProps> = ({
       setUnitat(itemToEdit.unitat || '');
       setPreuMerits(itemToEdit.preuMerits ?? 50);
       setDescripcio(itemToEdit.descripcio || '');
-      setImageUrl(itemToEdit.imageUrl || '');
+      setImageUrl(itemToEdit.imageUrl || itemToEdit.customLogoUrl || '');
     } else {
       setNom('');
       setUnitat('');
@@ -81,13 +81,15 @@ export const ShopItemAdminModal: React.FC<ShopItemAdminModalProps> = ({
       return;
     }
 
+    const img = imageUrl.trim() || undefined;
     const newItem: SpecializedShield = {
       id: itemToEdit?.id || `shield_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
       nom: nom.trim(),
       unitat: unitat.trim(),
       preuMerits: Number(preuMerits),
       descripcio: descripcio.trim() || nom.trim(),
-      imageUrl: imageUrl.trim() || undefined,
+      imageUrl: img,
+      customLogoUrl: img || itemToEdit?.customLogoUrl,
       escutTipus: itemToEdit?.escutTipus || 'generic_pvc',
       colorPrincipal: itemToEdit?.colorPrincipal || 'blue-600',
       colorSecundari: itemToEdit?.colorSecundari || '#eab308'

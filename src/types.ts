@@ -186,6 +186,8 @@ export interface OcaActiveQuestionState {
 
 export type QuestionAmbit = 'Àmbit A' | 'Àmbit B' | 'Àmbit C' | 'Actualitat' | 'ISPC' | string;
 
+export type OcaTileRole = 'normal' | 'mosso' | 'control' | 'torre' | 'oficina' | 'circuit' | 'impugnacio';
+
 export interface ReviewConceptItem {
   concepte: string;
   detall: string;
@@ -226,6 +228,7 @@ export interface SpecializedShield {
   escutTipus: 'tedax' | 'gei' | 'brimo' | 'arro' | 'transit' | 'canina' | 'subaquatica' | 'subsol' | 'medis_aeris' | 'cgic' | 'tedax_canina' | 'gu_bcn' | 'policia_local' | 'mediacio' | 'drons' | 'escortes' | 'ispc';
   colorPrincipal: string;
   colorSecundari: string;
+  imageUrl?: string;
   customLogoUrl?: string;
   hideBorder?: boolean;
   customLogoScale?: number;

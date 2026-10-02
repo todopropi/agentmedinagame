@@ -230,6 +230,60 @@ export const STORE_UNITS_LIST: StoreUnitBadge[] = [
     desc: 'Insígnia d\'or i llorer reservada exclusivament per a qui conquereix la Casella 100 del Tauler de l\'Oca Policial (Nivell Llegendari).', 
     gradient: 'from-amber-400 via-yellow-500 to-amber-700',
     unit: 'Nivell Llegendari - Cos de Mossos d\'Esquadra'
+  },
+  { 
+    id: 'escut_suprem_ambit_a', 
+    name: 'Gran Creu d\'Honor Suprema - Seguretat Ciutadana (C150)', 
+    price: 1500, 
+    iconName: 'Crown', 
+    desc: 'Màxima distinció d\'excel·lència atorgada en assolir la Casella 150 de l\'Àmbit A (Etapa Suprema).', 
+    gradient: 'from-yellow-400 via-amber-500 to-yellow-600',
+    unit: 'Nivell Suprem 150 - Mossos d\'Esquadra'
+  },
+  { 
+    id: 'escut_suprem_ambit_b', 
+    name: 'Gran Creu d\'Honor Suprema - Investigació & Dret (C150)', 
+    price: 1500, 
+    iconName: 'Crown', 
+    desc: 'Màxima distinció d\'excel·lència atorgada en assolir la Casella 150 de l\'Àmbit B (Etapa Suprema).', 
+    gradient: 'from-yellow-400 via-amber-500 to-yellow-600',
+    unit: 'Nivell Suprem 150 - Mossos d\'Esquadra'
+  },
+  { 
+    id: 'escut_suprem_ambit_c', 
+    name: 'Gran Creu d\'Honor Suprema - Recursos Operatius (C150)', 
+    price: 1500, 
+    iconName: 'Crown', 
+    desc: 'Màxima distinció d\'excel·lència atorgada en assolir la Casella 150 de l\'Àmbit C (Etapa Suprema).', 
+    gradient: 'from-yellow-400 via-amber-500 to-yellow-600',
+    unit: 'Nivell Suprem 150 - Mossos d\'Esquadra'
+  },
+  { 
+    id: 'escut_suprem_actualitat', 
+    name: 'Gran Creu d\'Honor Suprema - Actualitat & Trànsit (C150)', 
+    price: 1500, 
+    iconName: 'Crown', 
+    desc: 'Màxima distinció d\'excel·lència atorgada en assolir la Casella 150 del Tauler d\'Actualitat (Etapa Suprema).', 
+    gradient: 'from-yellow-400 via-amber-500 to-yellow-600',
+    unit: 'Nivell Suprem 150 - Mossos d\'Esquadra'
+  },
+  { 
+    id: 'escut_suprem_ispc', 
+    name: 'Gran Creu d\'Honor Suprema - ISPC Mestre Global (C150)', 
+    price: 1500, 
+    iconName: 'Crown', 
+    desc: 'La condecoració més alta de tota l\'Acadèmia Policial en conquerir la Casella 150 de l\'ISPC Global.', 
+    gradient: 'from-yellow-400 via-amber-500 to-yellow-600',
+    unit: 'Nivell Suprem 150 - Mossos d\'Esquadra'
+  },
+  { 
+    id: 'escut_suprem_global', 
+    name: 'Gran Creu d\'Honor Suprema Global (Casella 150)', 
+    price: 1500, 
+    iconName: 'Crown', 
+    desc: 'El pinacle de la glòria policial: Insígnia Suprema en assolir la Casella 150 del Tauler de l\'Oca.', 
+    gradient: 'from-yellow-400 via-amber-500 to-yellow-600',
+    unit: 'Nivell Suprem 150 - Cos de Mossos d\'Esquadra'
   }
 ];
 
@@ -244,7 +298,13 @@ export const DEFAULT_CAMPAIGN_AMBIT_MAP: Record<string, string> = {
   escut_llegenda_ambit_c: 'Casella 100 (Àmbit C)',
   escut_llegenda_actualitat: 'Casella 100 (Actualitat)',
   escut_llegenda_ispc: 'Casella 100 (ISPC)',
-  escut_llegenda: 'Casella 100'
+  escut_llegenda: 'Casella 100',
+  escut_suprem_ambit_a: 'Casella 150 (Àmbit A)',
+  escut_suprem_ambit_b: 'Casella 150 (Àmbit B)',
+  escut_suprem_ambit_c: 'Casella 150 (Àmbit C)',
+  escut_suprem_actualitat: 'Casella 150 (Actualitat)',
+  escut_suprem_ispc: 'Casella 150 (ISPC)',
+  escut_suprem_global: 'Casella 150'
 };
 
 export const DEFAULT_SHIELDS_LIST: SpecializedShield[] = STORE_UNITS_LIST.map(u => ({
