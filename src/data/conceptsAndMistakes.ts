@@ -1,3 +1,5 @@
+import { syncSupabaseCustomConcepts, fetchSupabaseCustomConcepts } from '../../supabase';
+
 export interface ConfusionConcept {
   id: string;
   titol: string;
@@ -15,7 +17,15 @@ export interface ConfusionConcept {
   reglaMnemotecnica: string;
 }
 
-export const CONFUSION_CONCEPTS: ConfusionConcept[] = [
+export interface MnemonicCard {
+  id: string;
+  titol: string;
+  regla: string;
+  detall: string;
+  ambit?: string;
+}
+
+const INITIAL_CONFUSION_CONCEPTS: ConfusionConcept[] = [
   {
     id: 'conf_tc_vs_tcomptes',
     titol: 'Tribunal Constitucional vs. Tribunal de Comptes',
@@ -278,7 +288,7 @@ export const CONFUSION_CONCEPTS: ConfusionConcept[] = [
   }
 ];
 
-export const MNEMONIC_CARDS = [
+const INITIAL_MNEMONIC_CARDS: MnemonicCard[] = [
   {
     id: 'mnemo_1',
     titol: '🏛️ B-I-E-S: Les 4 Escales del Cos de Mossos d\'Esquadra (Llei 10/1994)',
@@ -334,3 +344,116 @@ export const MNEMONIC_CARDS = [
     detall: 'Orgànicament la Policia Judicial depèn de la Generalitat / Ministeri. Funcionalment depèn exclusivament dels Jutges, Tribunals i Ministeri Fiscal quan investiga delictes, sense que ningú pugui interferir.'
   }
 ];
+
+const LOCAL_CONFUSIONS_KEY = 'agent_medina_custom_confusions';
+const LOCAL_MNEMONICS_KEY = 'agent_medina_custom_mnemonics';
+
+function loadStoredConfusions(): ConfusionConcept[] {
+  if (typeof window === 'undefined') return [...INITIAL_CONFUSION_CONCEPTS];
+  try {
+    const raw = localStorage.getItem(LOCAL_CONFUSIONS_KEY);
+    if (!raw) return [...INITIAL_CONFUSION_CONCEPTS];
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+  } catch {}
+  return [...INITIAL_CONFUSION_CONCEPTS];
+}
+
+function loadStoredMnemonics(): MnemonicCard[] {
+  if (typeof window === 'undefined') return [...INITIAL_MNEMONIC_CARDS];
+  try {
+    const raw = localStorage.getItem(LOCAL_MNEMONICS_KEY);
+    if (!raw) return [...INITIAL_MNEMONIC_CARDS];
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+  } catch {}
+  return [...INITIAL_MNEMONIC_CARDS];
+}
+
+export let CONFUSION_CONCEPTS: ConfusionConcept[] = loadStoredConfusions();
+export let MNEMONIC_CARDS: MnemonicCard[] = loadStoredMnemonics();
+
+const listeners: Array<() => void> = [];
+
+export function subscribeToConcepts(listener: () => void): () => void {
+  listeners.push(listener);
+  return () => {
+    const idx = listeners.indexOf(listener);
+    if (idx >= 0) listeners.splice(idx, 1);
+  };
+}
+
+function notifyConceptsUpdated() {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('custom_concepts_updated'));
+  }
+  listeners.forEach(cb => {
+    try { cb(); } catch {}
+  });
+}
+
+export async function saveCustomConfusion(concept: ConfusionConcept): Promise<void> {
+  const idx = CONFUSION_CONCEPTS.findIndex(c => c.id === concept.id);
+  if (idx >= 0) {
+    CONFUSION_CONCEPTS[idx] = concept;
+  } else {
+    CONFUSION_CONCEPTS = [concept, ...CONFUSION_CONCEPTS];
+  }
+  if (typeof window !== 'undefined') {
+    localStorage.setItem(LOCAL_CONFUSIONS_KEY, JSON.stringify(CONFUSION_CONCEPTS));
+  }
+  notifyConceptsUpdated();
+  await syncSupabaseCustomConcepts(CONFUSION_CONCEPTS, MNEMONIC_CARDS).catch(console.warn);
+}
+
+export async function deleteCustomConfusion(id: string): Promise<void> {
+  CONFUSION_CONCEPTS = CONFUSION_CONCEPTS.filter(c => c.id !== id);
+  if (typeof window !== 'undefined') {
+    localStorage.setItem(LOCAL_CONFUSIONS_KEY, JSON.stringify(CONFUSION_CONCEPTS));
+  }
+  notifyConceptsUpdated();
+  await syncSupabaseCustomConcepts(CONFUSION_CONCEPTS, MNEMONIC_CARDS).catch(console.warn);
+}
+
+export async function saveCustomMnemonic(card: MnemonicCard): Promise<void> {
+  const idx = MNEMONIC_CARDS.findIndex(m => m.id === card.id);
+  if (idx >= 0) {
+    MNEMONIC_CARDS[idx] = card;
+  } else {
+    MNEMONIC_CARDS = [card, ...MNEMONIC_CARDS];
+  }
+  if (typeof window !== 'undefined') {
+    localStorage.setItem(LOCAL_MNEMONICS_KEY, JSON.stringify(MNEMONIC_CARDS));
+  }
+  notifyConceptsUpdated();
+  await syncSupabaseCustomConcepts(CONFUSION_CONCEPTS, MNEMONIC_CARDS).catch(console.warn);
+}
+
+export async function deleteCustomMnemonic(id: string): Promise<void> {
+  MNEMONIC_CARDS = MNEMONIC_CARDS.filter(m => m.id !== id);
+  if (typeof window !== 'undefined') {
+    localStorage.setItem(LOCAL_MNEMONICS_KEY, JSON.stringify(MNEMONIC_CARDS));
+  }
+  notifyConceptsUpdated();
+  await syncSupabaseCustomConcepts(CONFUSION_CONCEPTS, MNEMONIC_CARDS).catch(console.warn);
+}
+
+// Background sync from Supabase on client boot
+if (typeof window !== 'undefined') {
+  fetchSupabaseCustomConcepts().then(res => {
+    if (res) {
+      let changed = false;
+      if (Array.isArray(res.confusions) && res.confusions.length > 0) {
+        CONFUSION_CONCEPTS = res.confusions;
+        localStorage.setItem(LOCAL_CONFUSIONS_KEY, JSON.stringify(CONFUSION_CONCEPTS));
+        changed = true;
+      }
+      if (Array.isArray(res.mnemonics) && res.mnemonics.length > 0) {
+        MNEMONIC_CARDS = res.mnemonics;
+        localStorage.setItem(LOCAL_MNEMONICS_KEY, JSON.stringify(MNEMONIC_CARDS));
+        changed = true;
+      }
+      if (changed) notifyConceptsUpdated();
+    }
+  }).catch(() => {});
+}

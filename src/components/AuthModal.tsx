@@ -9,9 +9,10 @@ import {
   subscribeUnauthorizedDomainAlert,
   UnauthorizedDomainInfo
 } from '../firebase';
-import { syncSupabaseProfile } from '../../supabase';
+import { syncSupabaseProfile, syncSupabaseUserProgression } from '../../supabase';
 import { OfficialEmblem } from './OfficialEmblem';
-import { Shield, Sparkles, Mail, Lock, User, AlertCircle, ArrowRight, Copy, Check, Info } from 'lucide-react';
+import { Shield, Sparkles, Mail, Lock, User, AlertCircle, ArrowRight, Copy, Check, Info, ShieldAlert } from 'lucide-react';
+import { LegalTermsModal } from './LegalTermsModal';
 
 interface AuthModalProps {
   onLoginSuccess: (profile: UserProfile) => void;
@@ -19,6 +20,7 @@ interface AuthModalProps {
 
 export const AuthModal: React.FC<AuthModalProps> = ({ onLoginSuccess }) => {
   const [isRegisterMode, setIsRegisterMode] = useState(false);
+  const [showLegalTerms, setShowLegalTerms] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
@@ -42,8 +44,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onLoginSuccess }) => {
       const userId = profile.uid || (profile as any).id || '';
       await syncSupabaseProfile({
         uid: userId,
+        id: userId,
         username: profile.displayName || 'Aspirant',
-        total_points: profile.xp ?? 0
+        total_points: profile.xp ?? 0,
+        merits: profile.merits ?? 0,
+        email: profile.email,
+        avatar_url: profile.photoURL || profile.equippedShieldId
       });
       onLoginSuccess(profile);
     } catch (err: any) {
@@ -62,8 +68,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onLoginSuccess }) => {
       const userId = profile.uid || (profile as any).id || '';
       await syncSupabaseProfile({
         uid: userId,
+        id: userId,
         username: profile.displayName || displayName || 'Aspirant Medina',
-        total_points: profile.xp ?? 0
+        total_points: profile.xp ?? 0,
+        merits: profile.merits ?? 0,
+        email: profile.email,
+        avatar_url: profile.photoURL || profile.equippedShieldId
       });
       onLoginSuccess(profile);
     } catch (err: any) {
@@ -90,18 +100,41 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onLoginSuccess }) => {
           return;
         }
         profile = await registerWithEmailPassword(email, password, displayName);
+        profile.displayName = displayName.trim();
       } else {
         profile = await loginWithEmailPassword(email, password);
       }
       const userId = profile.uid || (profile as any).id || '';
+      const chosenName = profile.displayName || displayName?.trim() || email.split('@')[0] || 'Aspirant Medina';
       await syncSupabaseProfile({
         uid: userId,
-        username: profile.displayName || displayName || 'Aspirant',
-        total_points: profile.xp ?? 0
+        id: userId,
+        username: chosenName,
+        total_points: profile.xp ?? 0,
+        merits: profile.merits ?? 0,
+        email: profile.email || email,
+        avatar_url: profile.photoURL || profile.equippedShieldId
       });
+      await syncSupabaseUserProgression(userId, {
+        username: chosenName,
+        xp: profile.xp ?? 0,
+        merits: profile.merits ?? 0
+      });
+      profile.displayName = chosenName;
       onLoginSuccess(profile);
     } catch (err: any) {
-      setErrorMsg(err?.message || 'Error en autenticar. Comprova les dades.');
+      const code = err?.code || '';
+      let msg = err?.message || 'Error en autenticar. Comprova les dades.';
+      if (code === 'auth/operation-not-allowed' || msg.includes('operation-not-allowed')) {
+        msg = 'Cal activar el proveïdor de "Correu electrònic/contrasenya" a Firebase Console -> Authentication -> Sign-in method.';
+      } else if (code === 'auth/email-already-in-use') {
+        msg = 'Aquest correu electrònic ja està registrat. Prova d\'iniciar sessió.';
+      } else if (code === 'auth/invalid-credential' || code === 'auth/user-not-found' || code === 'auth/wrong-password') {
+        msg = 'Correu electrònic o contrasenya incorrectes.';
+      } else if (code === 'auth/weak-password') {
+        msg = 'La contrasenya ha de tenir com a mínim 6 caràcters.';
+      }
+      setErrorMsg(msg);
     } finally {
       setLoading(false);
     }
@@ -123,7 +156,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onLoginSuccess }) => {
 
         {/* Emblema corporatiu oficial */}
         <div className="flex flex-col items-center text-center mb-5">
-          <OfficialEmblem size={100} />
+          <OfficialEmblem size={110} glow={true} />
           <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white mt-3">
             Agent Medina
           </h1>
@@ -175,7 +208,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onLoginSuccess }) => {
           type="button"
           onClick={handleGoogleAuth}
           disabled={loading}
-          className="w-full py-3.5 px-4 bg-white hover:bg-slate-100 text-slate-900 font-bold rounded-xl flex items-center justify-center gap-3 transition-all transform active:scale-95 shadow-md shadow-slate-950/30 mb-2.5 disabled:opacity-60 cursor-pointer"
+          className="w-full py-3.5 px-4 bg-white hover:bg-slate-100 text-slate-900 font-bold rounded-xl flex items-center justify-center gap-3 transition-all transform active:scale-95 shadow-md shadow-slate-950/30 mb-3 disabled:opacity-60 cursor-pointer"
         >
           <svg className="w-5 h-5" viewBox="0 0 24 24">
             <path
@@ -198,16 +231,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onLoginSuccess }) => {
           <span className="text-sm font-extrabold">Entrar amb el compte de Google</span>
         </button>
 
-        {/* Resilient Guest / Local Aspirant Login (Ensures immediate access on any domain) */}
-        <button
-          type="button"
-          onClick={handleGuestAuth}
-          disabled={loading}
-          className="w-full py-2.5 px-4 bg-slate-800/90 hover:bg-slate-700 text-amber-400 hover:text-amber-300 border border-slate-700/80 font-bold rounded-xl flex items-center justify-center gap-2 transition-all transform active:scale-95 text-xs shadow-sm mb-4 cursor-pointer disabled:opacity-60"
-        >
-          <Shield className="w-4 h-4 text-amber-400" />
-          <span>Accés Ràpid com a Aspirant (Mode Local / Preview)</span>
-        </button>
+        {/* Notificació cortesia 48h */}
+        <div className="mb-3 py-2 px-3 rounded-xl bg-purple-500/10 border border-purple-500/30 text-purple-300 text-[11px] flex items-center justify-center gap-1.5 font-bold">
+          <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+          <span>Prova de cortesia: 48 hores d'accés complet de regal en registrar-te!</span>
+        </div>
 
         <div className="relative flex items-center justify-center my-3">
           <div className="border-t border-slate-800 w-full" />
@@ -296,7 +324,30 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onLoginSuccess }) => {
             </span>
           )}
         </div>
+
+        {/* Descàrrec legal oficial */}
+        <div className="mt-6 pt-4 border-t border-slate-800/80 text-[10px] text-slate-400 text-center leading-relaxed space-y-1.5">
+          <p>
+            <strong>Avís legal:</strong> Aquesta plataforma és una eina independent de formació i gamificació opositora. No té cap vinculació oficial, aval ni representació amb la Generalitat de Catalunya, el Departament d'Interior ni la Direcció General de la Policia (Cos de Mossos d'Esquadra).
+          </p>
+          <div>
+            <span className="text-slate-400">Si utilitzes l'aplicació, acceptes els </span>
+            <button
+              type="button"
+              onClick={() => setShowLegalTerms(true)}
+              className="text-amber-400 hover:text-amber-300 underline font-bold cursor-pointer transition-colors"
+            >
+              termes d'ús, propietat intel·lectual i prohibició de difusió
+            </button>
+            <span className="text-slate-400">.</span>
+          </div>
+        </div>
       </div>
+
+      <LegalTermsModal
+        isOpen={showLegalTerms}
+        onClose={() => setShowLegalTerms(false)}
+      />
     </div>
   );
 };

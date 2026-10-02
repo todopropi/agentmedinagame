@@ -1,5 +1,5 @@
 import { Question } from '../types';
-import { QUESTIONS_BANK } from './questionsBank';
+import { QUESTIONS_BANK, selectSmartQuestion } from './questionsBank';
 
 export interface DuelQuestionItem {
   id: string;
@@ -438,7 +438,14 @@ export const HTML_QUESTIONS_TOPICS: { [topicIndex: number]: DuelQuestionItem[] }
 };
 
 // Returns question for topicIndex (0 to 5) with exact page number & literal text from the Guia Oficial 2026
-export function getDuelQuestion(topicIndex: number): DuelQuestionItem {
+export function getDuelQuestion(
+  topicIndex: number, 
+  userProgress?: {
+    answeredQuestionIds?: string[];
+    failedQuestionIds?: string[];
+    questionMistakesCount?: Record<string, number>;
+  }
+): DuelQuestionItem {
   const actualIndex = topicIndex === -1 ? 5 : topicIndex;
   const keys = ['A', 'B', 'C', 'D'];
 
@@ -489,7 +496,7 @@ export function getDuelQuestion(topicIndex: number): DuelQuestionItem {
   }
 
   if (filtered.length > 0) {
-    const raw = filtered[Math.floor(Math.random() * filtered.length)];
+    const raw = selectSmartQuestion(filtered, userProgress) || filtered[Math.floor(Math.random() * filtered.length)];
 
     // Extract exact page number from raw question or explanation regex
     let pageRef = raw.guiaPagina || '';
@@ -502,17 +509,30 @@ export function getDuelQuestion(topicIndex: number): DuelQuestionItem {
       }
     }
 
+    const rawOptions = raw.opcions.map((optText, idx) => ({
+      text: optText,
+      correct: idx === raw.resposta || String(idx) === String(raw.resposta)
+    }));
+
+    // Fisher-Yates shuffle per desordenar opcions i que la correcta mai tingui la mateixa lletra
+    for (let i = rawOptions.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [rawOptions[i], rawOptions[j]] = [rawOptions[j], rawOptions[i]];
+    }
+
+    const shuffledDuelOptions = rawOptions.map((opt, idx) => ({
+      key: keys[idx] || String(idx),
+      text: opt.text,
+      correct: opt.correct
+    }));
+
     return {
       id: raw.id,
       topicIndex: actualIndex,
       categoryName: raw.seccio ? `${categoryName} (${raw.seccio})` : categoryName,
       categoryIcon,
       question: raw.pregunta,
-      options: raw.opcions.map((optText, idx) => ({
-        key: keys[idx] || String(idx),
-        text: optText,
-        correct: idx === raw.resposta
-      })),
+      options: shuffledDuelOptions,
       explanation: raw.explicacio,
       guiaPagina: pageRef,
       guiaTema: raw.guiaTema || raw.seccio || raw.ambit,
@@ -525,8 +545,19 @@ export function getDuelQuestion(topicIndex: number): DuelQuestionItem {
   // Fallback to local
   const localList = HTML_QUESTIONS_TOPICS[actualIndex] || HTML_QUESTIONS_TOPICS[0];
   const q = localList[Math.floor(Math.random() * localList.length)];
+  const localOpts = q.options.map(o => ({ ...o }));
+  for (let i = localOpts.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [localOpts[i], localOpts[j]] = [localOpts[j], localOpts[i]];
+  }
+  const shuffledLocalOptions = localOpts.map((o, idx) => ({
+    ...o,
+    key: keys[idx] || String(idx)
+  }));
+
   return {
     ...q,
+    options: shuffledLocalOptions,
     guiaPagina: "Guia Oficial Mossos 2026",
     guiaTema: q.categoryName,
     textLiteral: q.explanation

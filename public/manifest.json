@@ -1,0 +1,37 @@
+{
+  "name": "Agent Median Game",
+  "short_name": "Agent Median Game",
+  "start_url": "/",
+  "id": "/",
+  "display": "standalone",
+  "background_color": "#020617",
+  "theme_color": "#020617",
+  "orientation": "portrait",
+  "description": "Aplicació web interactiva de gamificació per a opositores a Mossos d'Esquadra i Policia Local amb mode campanya, duels 1v1 i economia de mèrits.",
+  "icons": [
+    {
+      "src": "/app-logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/app-logo-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/app-logo-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/meed-logo.png",
+      "sizes": "756x958",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

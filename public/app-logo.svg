@@ -1,0 +1,162 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <radialGradient id="bgGrad" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#0f172a" />
+      <stop offset="100%" stop-color="#020617" />
+    </radialGradient>
+    <linearGradient id="goldCrownGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#FDE047" />
+      <stop offset="50%" stop-color="#EAB308" />
+      <stop offset="100%" stop-color="#A16207" />
+    </linearGradient>
+    <linearGradient id="goldRayGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FEF08A" />
+      <stop offset="30%" stop-color="#FACC15" />
+      <stop offset="70%" stop-color="#CA8A04" />
+      <stop offset="100%" stop-color="#854D0E" />
+    </linearGradient>
+    <linearGradient id="shieldDarkGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#0B132B" />
+      <stop offset="50%" stop-color="#080C1A" />
+      <stop offset="100%" stop-color="#030712" />
+    </linearGradient>
+    <linearGradient id="bannerGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#111827" />
+      <stop offset="100%" stop-color="#030712" />
+    </linearGradient>
+    <filter id="emblemShadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="2" stdDeviation="2" floodColor="#000000" floodOpacity="0.8" />
+    </filter>
+  </defs>
+
+  <!-- Background Base for App Icon -->
+  <rect width="512" height="512" rx="105" fill="url(#bgGrad)" />
+  <rect width="504" height="504" x="4" y="4" rx="101" fill="none" stroke="#eab308" stroke-width="3" stroke-opacity="0.4" />
+
+  <g transform="translate(56, 56) scale(1.0)">
+    <!-- 1. RAIGS DAURATS RADIATS EXTERIORS (SOL POLICIAL) -->
+    <g transform="translate(200, 215)">
+      <path d="M -9, -152 L 0, -178 L 9, -152 L 5, -125 L -5, -125 Z" fill="url(#goldRayGrad)" stroke="#713f12" stroke-width="0.8" transform="rotate(0)" />
+      <path d="M -7, -145 L 0, -165 L 7, -145 L 4, -125 L -4, -125 Z" fill="url(#goldRayGrad)" stroke="#713f12" stroke-width="0.8" transform="rotate(9)" />
+      <path d="M -9, -152 L 0, -178 L 9, -152 L 5, -125 L -5, -125 Z" fill="url(#goldRayGrad)" stroke="#713f12" stroke-width="0.8" transform="rotate(18)" />
+      <path d="M -7, -145 L 0, -165 L 7, -145 L 4, -125 L -4, -125 Z" fill="url(#goldRayGrad)" stroke="#713f12" stroke-width="0.8" transform="rotate(27)" />
+      <path d="M -9, -152 L 0, -178 L 9, -152 L 5, -125 L -5, -125 Z" fill="url(#goldRayGrad)" stroke="#713f12" stroke-width="0.8" transform="rotate(36)" />
+      <path d="M -7, -145 L 0, -165 L 7, -145 L 4, -125 L -4, -125 Z" fill="url(#goldRayGrad)" stroke="#713f12" stroke-width="0.8" transform="rotate(45)" />
+      <path d="M -9, -152 L 0, -178 L 9, -152 L 5, -125 L -5, -125 Z" fill="url(#goldRayGrad)" stroke="#713f12" stroke-width="0.8" transform="rotate(54)" />
+      <path d="M -7, -145 L 0, -165 L 7, -145 L 4, -125 L -4, -125 Z" fill="url(#goldRayGrad)" stroke="#713f12" stroke-width="0.8" transform="rotate(63)" />
+      <path d="M -9, -152 L 0, -178 L 9, -152 L 5, -125 L -5, -125 Z" fill="url(#goldRayGrad)" stroke="#713f12" stroke-width="0.8" transform="rotate(72)" />
+      <path d="M -7, -145 L 0, -165 L 7, -145 L 4, -125 L -4, -125 Z" fill="url(#goldRayGrad)" stroke="#713f12" stroke-width="0.8" transform="rotate(81)" />
+      <path d="M -9, -152 L 0, -178 L 9, -152 L 5, -125 L -5, -125 Z" fill="url(#goldRayGrad)" stroke="#713f12" stroke-width="0.8" transform="rotate(90)" />
+      <path d="M -7, -145 L 0, -165 L 7, -145 L 4, -125 L -4, -125 Z" fill="url(#goldRayGrad)" stroke="#713f12" stroke-width="0.8" transform="rotate(99)" />
+      <path d="M -9, -152 L 0, -178 L 9, -152 L 5, -125 L -5, -125 Z" fill="url(#goldRayGrad)" stroke="#713f12" stroke-width="0.8" transform="rotate(108)" />
+      <path d="M -7, -145 L 0, -165 L 7, -145 L 4, -125 L -4, -125 Z" fill="url(#goldRayGrad)" stroke="#713f12" stroke-width="0.8" transform="rotate(117)" />
+      <path d="M -9, -152 L 0, -178 L 9, -152 L 5, -125 L -5, -125 Z" fill="url(#goldRayGrad)" stroke="#713f12" stroke-width="0.8" transform="rotate(126)" />
+      <path d="M -7, -145 L 0, -165 L 7, -145 L 4, -125 L -4, -125 Z" fill="url(#goldRayGrad)" stroke="#713f12" stroke-width="0.8" transform="rotate(135)" />
+      <path d="M -9, -152 L 0, -178 L 9, -152 L 5, -125 L -5, -125 Z" fill="url(#goldRayGrad)" stroke="#713f12" stroke-width="0.8" transform="rotate(144)" />
+      <path d="M -7, -145 L 0, -165 L 7, -145 L 4, -125 L -4, -125 Z" fill="url(#goldRayGrad)" stroke="#713f12" stroke-width="0.8" transform="rotate(153)" />
+      <path d="M -9, -152 L 0, -178 L 9, -152 L 5, -125 L -5, -125 Z" fill="url(#goldRayGrad)" stroke="#713f12" stroke-width="0.8" transform="rotate(162)" />
+      <path d="M -7, -145 L 0, -165 L 7, -145 L 4, -125 L -4, -125 Z" fill="url(#goldRayGrad)" stroke="#713f12" stroke-width="0.8" transform="rotate(171)" />
+      <path d="M -9, -152 L 0, -178 L 9, -152 L 5, -125 L -5, -125 Z" fill="url(#goldRayGrad)" stroke="#713f12" stroke-width="0.8" transform="rotate(180)" />
+      <path d="M -7, -145 L 0, -165 L 7, -145 L 4, -125 L -4, -125 Z" fill="url(#goldRayGrad)" stroke="#713f12" stroke-width="0.8" transform="rotate(189)" />
+      <path d="M -9, -152 L 0, -178 L 9, -152 L 5, -125 L -5, -125 Z" fill="url(#goldRayGrad)" stroke="#713f12" stroke-width="0.8" transform="rotate(198)" />
+      <path d="M -7, -145 L 0, -165 L 7, -145 L 4, -125 L -4, -125 Z" fill="url(#goldRayGrad)" stroke="#713f12" stroke-width="0.8" transform="rotate(207)" />
+      <path d="M -9, -152 L 0, -178 L 9, -152 L 5, -125 L -5, -125 Z" fill="url(#goldRayGrad)" stroke="#713f12" stroke-width="0.8" transform="rotate(216)" />
+      <path d="M -7, -145 L 0, -165 L 7, -145 L 4, -125 L -4, -125 Z" fill="url(#goldRayGrad)" stroke="#713f12" stroke-width="0.8" transform="rotate(225)" />
+      <path d="M -9, -152 L 0, -178 L 9, -152 L 5, -125 L -5, -125 Z" fill="url(#goldRayGrad)" stroke="#713f12" stroke-width="0.8" transform="rotate(234)" />
+      <path d="M -7, -145 L 0, -165 L 7, -145 L 4, -125 L -4, -125 Z" fill="url(#goldRayGrad)" stroke="#713f12" stroke-width="0.8" transform="rotate(243)" />
+      <path d="M -9, -152 L 0, -178 L 9, -152 L 5, -125 L -5, -125 Z" fill="url(#goldRayGrad)" stroke="#713f12" stroke-width="0.8" transform="rotate(252)" />
+      <path d="M -7, -145 L 0, -165 L 7, -145 L 4, -125 L -4, -125 Z" fill="url(#goldRayGrad)" stroke="#713f12" stroke-width="0.8" transform="rotate(261)" />
+      <path d="M -9, -152 L 0, -178 L 9, -152 L 5, -125 L -5, -125 Z" fill="url(#goldRayGrad)" stroke="#713f12" stroke-width="0.8" transform="rotate(270)" />
+      <path d="M -7, -145 L 0, -165 L 7, -145 L 4, -125 L -4, -125 Z" fill="url(#goldRayGrad)" stroke="#713f12" stroke-width="0.8" transform="rotate(279)" />
+      <path d="M -9, -152 L 0, -178 L 9, -152 L 5, -125 L -5, -125 Z" fill="url(#goldRayGrad)" stroke="#713f12" stroke-width="0.8" transform="rotate(288)" />
+      <path d="M -7, -145 L 0, -165 L 7, -145 L 4, -125 L -4, -125 Z" fill="url(#goldRayGrad)" stroke="#713f12" stroke-width="0.8" transform="rotate(297)" />
+      <path d="M -9, -152 L 0, -178 L 9, -152 L 5, -125 L -5, -125 Z" fill="url(#goldRayGrad)" stroke="#713f12" stroke-width="0.8" transform="rotate(306)" />
+      <path d="M -7, -145 L 0, -165 L 7, -145 L 4, -125 L -4, -125 Z" fill="url(#goldRayGrad)" stroke="#713f12" stroke-width="0.8" transform="rotate(315)" />
+      <path d="M -9, -152 L 0, -178 L 9, -152 L 5, -125 L -5, -125 Z" fill="url(#goldRayGrad)" stroke="#713f12" stroke-width="0.8" transform="rotate(324)" />
+      <path d="M -7, -145 L 0, -165 L 7, -145 L 4, -125 L -4, -125 Z" fill="url(#goldRayGrad)" stroke="#713f12" stroke-width="0.8" transform="rotate(333)" />
+      <path d="M -9, -152 L 0, -178 L 9, -152 L 5, -125 L -5, -125 Z" fill="url(#goldRayGrad)" stroke="#713f12" stroke-width="0.8" transform="rotate(342)" />
+      <path d="M -7, -145 L 0, -165 L 7, -145 L 4, -125 L -4, -125 Z" fill="url(#goldRayGrad)" stroke="#713f12" stroke-width="0.8" transform="rotate(351)" />
+    </g>
+
+    <!-- 2. CORONA MURAL SUPERIOR -->
+    <g transform="translate(200, 72)">
+      <path d="M -60, -20 L -50, -62 L -34, -62 L -30, -38 L -14, -38 L -10, -70 L 10, -70 L 14, -38 L 30, -38 L 34, -62 L 50, -62 L 60, -20 Z" fill="url(#goldCrownGrad)" stroke="#78350F" stroke-width="2" filter="url(#emblemShadow)" />
+      <rect x="-44" y="-32" width="6" height="8" rx="2" fill="#451A03" />
+      <rect x="-18" y="-32" width="6" height="8" rx="2" fill="#451A03" />
+      <rect x="12" y="-32" width="6" height="8" rx="2" fill="#451A03" />
+      <rect x="38" y="-32" width="6" height="8" rx="2" fill="#451A03" />
+      <path d="M -50,-24 L 50,-24" stroke="#78350F" stroke-width="1.5" />
+    </g>
+
+    <!-- 3. ESCUT OVALAT PRINCIPAL CENTRAL -->
+    <g transform="translate(200, 215)">
+      <path d="M 0,-140 C 95,-140 145,-75 145,20 C 145,95 85,150 0,170 C -85,150 -145,95 -145,20 C -145,-75 -95,-140 0,-140 Z" fill="url(#shieldDarkGrad)" stroke="url(#goldRayGrad)" stroke-width="8" filter="url(#emblemShadow)" />
+      <path d="M 0,-132 C 88,-132 135,-70 135,18 C 135,88 80,140 0,160 C -80,140 -135,88 -135,18 C -135,-70 -88,-132 0,-132 Z" fill="none" stroke="#FDE047" stroke-width="1.5" stroke-dasharray="4 2" />
+    </g>
+
+    <!-- 4. PART SUPERIOR: POLICIA LOCAL -->
+    <g transform="translate(200, 155)">
+      <path id="curvePoliciaLocal" d="M -110,-12 C -60,-55 60,-55 110,-12" fill="none" />
+      <text fill="#F8FAFC" font-size="19" font-weight="900" font-family="'Space Grotesk', sans-serif" letter-spacing="3">
+        <textPath href="#curvePoliciaLocal" startOffset="50%" text-anchor="middle">
+          POLICIA LOCAL
+        </textPath>
+      </text>
+
+      <g transform="translate(-48, 12)">
+        <ellipse cx="0" cy="-14" rx="4" ry="8" fill="#F8FAFC" transform="rotate(-35)" />
+        <ellipse cx="-4" cy="-4" rx="4" ry="8" fill="#F8FAFC" transform="rotate(-20)" />
+        <ellipse cx="-2" cy="8" rx="4" ry="8" fill="#F8FAFC" transform="rotate(-5)" />
+      </g>
+      <g transform="translate(48, 12)">
+        <ellipse cx="0" cy="-14" rx="4" ry="8" fill="#F8FAFC" transform="rotate(35)" />
+        <ellipse cx="4" cy="-4" rx="4" ry="8" fill="#F8FAFC" transform="rotate(20)" />
+        <ellipse cx="2" cy="8" rx="4" ry="8" fill="#F8FAFC" transform="rotate(5)" />
+      </g>
+
+      <g transform="translate(0, 8)">
+        <path d="M -22,-24 L -18,-35 L -10,-28 L 0,-37 L 10,-28 L 18,-35 L 22,-24 Z" fill="#FACC15" stroke="#78350F" stroke-width="1" />
+        <path d="M -24,-22 L 24,-22 L 24,0 C 24,18 0,30 0,30 C 0,30 -24,18 -24,0 Z" fill="#FFFFFF" stroke="#0F172A" stroke-width="2" />
+        <g transform="rotate(45)">
+          <rect x="-10" y="-10" width="10" height="10" fill="#000000" />
+          <rect x="0" y="-10" width="10" height="10" fill="#FFFFFF" />
+          <rect x="-10" y="0" width="10" height="10" fill="#FFFFFF" />
+          <rect x="0" y="0" width="10" height="10" fill="#000000" />
+        </g>
+      </g>
+    </g>
+
+    <!-- 5. FRANJA / BANNER CENTRAL: MEED -->
+    <g transform="translate(200, 215)">
+      <path d="M -150,-24 L -130,-30 L 130,-30 L 150,-24 L 140,24 L 125,30 L -125,30 L -140,24 Z" fill="url(#bannerGrad)" stroke="url(#goldRayGrad)" stroke-width="4" filter="url(#emblemShadow)" />
+      <text x="0" y="17" text-anchor="middle" font-family="'Space Grotesk', 'Arial Black', sans-serif" font-weight="900" font-size="54" letter-spacing="4">
+        <tspan fill="#0284C7">ME</tspan>
+        <tspan fill="#DC2626">ED</tspan>
+      </text>
+    </g>
+
+    <!-- 6. PART INFERIOR: SENYERA I mossos d'esquadra -->
+    <g transform="translate(200, 298)">
+      <g>
+        <path d="M -38,-10 C -48,-15 -48,15 -38,10 C -34,2 -34,-2 -38,-10 Z" fill="#CA8A04" />
+        <path d="M 38,-10 C 48,-15 48,15 38,10 C 34,2 34,-2 38,-10 Z" fill="#CA8A04" />
+        <circle cx="0" cy="0" r="28" fill="#FACC15" stroke="#EAB308" stroke-width="2.5" />
+        <g clip-path="url(#senyeraClip)">
+          <rect x="-18" y="-28" width="5" height="56" fill="#DC2626" />
+          <rect x="-6" y="-28" width="5" height="56" fill="#DC2626" />
+          <rect x="6" y="-28" width="5" height="56" fill="#DC2626" />
+          <rect x="18" y="-28" width="5" height="56" fill="#DC2626" />
+        </g>
+        <clipPath id="senyeraClip">
+          <circle cx="0" cy="0" r="27" />
+        </clipPath>
+      </g>
+      <path id="curveMossos" d="M -115,-8 C -80,48 80,48 115,-8" fill="none" />
+      <text fill="#FEF08A" font-size="17" font-weight="800" font-family="'Space Grotesk', sans-serif" letter-spacing="2">
+        <textPath href="#curveMossos" startOffset="50%" text-anchor="middle">
+          mossos d'esquadra
+        </textPath>
+      </text>
+    </g>
+  </g>
+</svg>

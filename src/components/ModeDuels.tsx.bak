@@ -28,7 +28,6 @@ import { SPECIALIZED_SHIELDS } from '../data/badges';
 import { AudioEngine } from '../utils/audio';
 import { ConceptReviewCard } from './ConceptReviewCard';
 import { getDuelQuestion, DuelQuestionItem } from '../data/htmlQuestions';
-import { triggerTurnPushNotification, triggerDefeatRevengeNotification } from '../utils/pushNotifications';
 import confetti from 'canvas-confetti';
 import { 
   Swords, 
@@ -46,8 +45,6 @@ import {
   HelpCircle,
   Eye,
   ChevronLeft,
-  ChevronDown,
-  ChevronUp,
   X,
   Bot,
   Circle,
@@ -60,14 +57,7 @@ import {
 
 interface ModeDuelsProps {
   user: UserProfile;
-  onUpdateUserStats: (
-    xpGained: number, 
-    meritsGained: number, 
-    failedId?: string, 
-    savedId?: string,
-    answeredId?: string,
-    isCorrect?: boolean
-  ) => void;
+  onUpdateUserStats: (xpGained: number, meritsGained: number, failedId?: string) => void;
   onSaveQuestionToggle: (questionId: string) => void;
   onUpdateWildcards?: (delta: number) => void;
 }
@@ -178,9 +168,6 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
   const [spinning, setSpinning] = useState(false);
   const [wheelAngle, setWheelAngle] = useState(0);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const wheelContainerRef = useRef<HTMLDivElement | null>(null);
-  const questionContainerRef = useRef<HTMLDivElement | null>(null);
-  const activeArenaRef = useRef<HTMLDivElement | null>(null);
 
   // Question Arena State
   const [currentQuestion, setCurrentQuestion] = useState<DuelQuestionItem | null>(null);
@@ -189,35 +176,15 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
   const [hasAnswered, setHasAnswered] = useState(false);
   const [isCorrectAnswer, setIsCorrectAnswer] = useState(false);
   const [disabledOptions, setDisabledOptions] = useState<string[]>([]);
-  const [fcmPushAlert, setFcmPushAlert] = useState<string | null>(null);
   const [botActionNotification, setBotActionNotification] = useState<{
     text: string;
     type: 'stripe' | 'correct' | 'wrong';
   } | null>(null);
 
-  // Auto-scroll suau cap a la targeta de pregunta en carregar-se
-  useEffect(() => {
-    if (currentQuestion && questionContainerRef.current) {
-      setTimeout(() => {
-        questionContainerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }, 50);
-    }
-  }, [currentQuestion?.id]);
-
-  // Auto-scroll en entrar a un duel
-  useEffect(() => {
-    if (activeGame && activeArenaRef.current) {
-      setTimeout(() => {
-        activeArenaRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      }, 80);
-    }
-  }, [activeGame?.id]);
-
   // Sub-pestanyes de duels: 'my_duels', 'h2h' (Cara a Cara) o 'history' (Resultats Individuals Supabase)
   const [activeDuelTab, setActiveDuelTab] = useState<'my_duels' | 'h2h' | 'history'>('my_duels');
   const [h2hFilter, setH2hFilter] = useState<'mine' | 'all'>('mine');
   const [h2hSearchTerm, setH2hSearchTerm] = useState('');
-  const [expandedH2hPairKey, setExpandedH2hPairKey] = useState<string | null>(null);
   const [finishedHistory, setFinishedHistory] = useState<FinishedDuelResult[]>([]);
   const [historySearchTerm, setHistorySearchTerm] = useState('');
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
@@ -259,49 +226,31 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
     }
 
     const userMap = new Map<string, UserProfile>();
-    if (Array.isArray(users)) {
-      for (const u of users) {
-        if (!u || u.uid === user.uid) continue;
-        userMap.set(u.uid, u);
-      }
-    }
     if (Array.isArray(supabaseProfiles)) {
       for (const sp of supabaseProfiles) {
         if (!sp || sp.id === user.uid) continue;
-        const existing = userMap.get(sp.id);
-        const resolvedName = 
-          (sp.username && sp.username !== 'Aspirant' && sp.username !== 'Aspirant Medina' ? sp.username : null) ||
-          (existing?.displayName && existing.displayName !== 'Aspirant' && existing.displayName !== 'Aspirant Medina' ? existing.displayName : null) ||
-          sp.username || existing?.displayName || 'Aspirant';
-
         userMap.set(sp.id, {
           uid: sp.id,
-          displayName: resolvedName,
-          email: sp.email || existing?.email || '',
-          xp: Math.max(sp.total_points || 0, existing?.xp || 0),
-          merits: Math.max(Math.floor((sp.total_points || 0) / 10), existing?.merits || 0),
-          rank: calculateRank(Math.max(sp.total_points || 0, existing?.xp || 0)),
-          equippedShieldId: (sp.avatar_url && !sp.avatar_url.startsWith('http') && sp.avatar_url !== 'escut_basico' ? sp.avatar_url : (existing?.equippedShieldId || 'generic_pvc')),
+          displayName: sp.username || 'Aspirant',
+          email: '',
+          xp: sp.total_points || 0,
+          merits: Math.floor((sp.total_points || 0) / 10),
+          rank: calculateRank(sp.total_points || 0),
+          equippedShieldId: (sp.avatar_url && !sp.avatar_url.startsWith('http') && sp.avatar_url !== 'escut_basico' ? sp.avatar_url : 'generic_pvc'),
           unlockedShieldIds: ['generic_pvc'],
           failedQuestionIds: [],
           savedQuestionIds: [],
-          photoURL: sp.avatar_url || existing?.photoURL,
+          photoURL: sp.avatar_url,
           isOnline: true
         });
       }
     }
-    const now = Date.now();
-    const activeUsersList = Array.from(userMap.values()).filter(u => {
-      if (u.isAdmin || u.isUnlimited || u.subscriptionStatus === 'unlimited') return true;
-      if (u.subscriptionStatus === 'expired') return false;
-      if (u.subscriptionExpiresAt) {
-        const exp = new Date(u.subscriptionExpiresAt).getTime();
-        if (exp <= now) return false;
+    if (Array.isArray(users)) {
+      for (const u of users) {
+        userMap.set(u.uid, u);
       }
-      return true;
-    });
-
-    setRegisteredUsers(activeUsersList);
+    }
+    setRegisteredUsers(Array.from(userMap.values()));
 
     // Merge games: local/Firebase + Supabase matches
     const gamesMap = new Map<string, DuelGame>();
@@ -474,13 +423,7 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
   // Redraw Wheel Canvas whenever angle, activeGame or question view changes
   useEffect(() => {
     drawWheelCanvas(wheelAngle);
-    if (activeGame && !currentQuestion) {
-      const timer = setTimeout(() => {
-        wheelContainerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }, 100);
-      return () => clearTimeout(timer);
-    }
-  }, [wheelAngle, activeGame?.id, currentQuestion]);
+  }, [wheelAngle, activeGame, currentQuestion]);
 
   // Handle spin wheel
   const handleSpinWheel = () => {
@@ -488,25 +431,14 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
     AudioEngine.playClick();
     setSpinning(true);
 
-    // Auto-centrar la ruleta a la pantalla del mòbil
-    setTimeout(() => {
-      wheelContainerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }, 40);
-
     const isHost = activeGame.hostPlayerUid === user.uid;
     const currentStreak = (activeGame.consecutiveCorrect && activeGame.consecutiveCorrect[user.uid]) || 0;
 
-    // Pick target sector aleatòriament
-    // Si la ratxa és >= 3, donem una probabilitat moderada (35%) de Desafiament Ratlla (sector 5) però mantenim varietat aleatòria
+    // Pick target sector
+    // If current streak is 3 -> automatic stripe challenge!
     let targetIndex = Math.floor(Math.random() * WHEEL_SECTORS.length);
     if (currentStreak >= 3) {
-      if (Math.random() < 0.35) {
-        targetIndex = 5; // DESAFIAMENT RATLLA (Preguntes Reals d'Examen)
-      } else {
-        // Selecció aleatòria entre els altres sectors per no ser sempre previsible
-        const otherSectors = [0, 1, 2, 3, 4];
-        targetIndex = otherSectors[Math.floor(Math.random() * otherSectors.length)];
-      }
+      targetIndex = 5; // DESAFIAMENT RATLLA
     }
 
     const totalSectors = WHEEL_SECTORS.length;
@@ -559,11 +491,7 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
         
         // Load question for target sector
         const topic = sector.topicIndex === -1 ? Math.floor(Math.random() * 5) : sector.topicIndex;
-        const q = getDuelQuestion(topic, {
-          answeredQuestionIds: user.answeredQuestionIds,
-          failedQuestionIds: user.failedQuestionIds,
-          questionMistakesCount: user.questionMistakesCount
-        });
+        const q = getDuelQuestion(topic);
         
         setIsStripeChallenge(isStripe);
         setCurrentQuestion(q);
@@ -602,7 +530,7 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
       });
       // Recompensa per encert en duel: +20 XP, +2 Mèrits (combo +1 extra si ratxa >= 2)
       const meritsPerAnswer = myStreak >= 1 ? 3 : 2;
-      onUpdateUserStats(20, meritsPerAnswer, undefined, undefined, currentQuestion.id, true);
+      onUpdateUserStats(20, meritsPerAnswer);
 
       // If stripe challenge -> paint +1 stripe!
       if (isStripeChallenge) {
@@ -663,42 +591,16 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
         status: isWinner ? 'finished' : 'active'
       });
 
-      if (isWinner) {
-        const rivalUid = isHost ? (activeGame.guestPlayerUid || '') : activeGame.hostPlayerUid;
-        if (rivalUid && !rivalUid.startsWith('bot_')) {
-          triggerDefeatRevengeNotification({
-            matchId: activeGame.id,
-            senderUid: user.uid,
-            senderName: user.displayName,
-            targetUid: rivalUid
-          }).catch(console.warn);
-        }
-      }
       await saveDuelGameUpdate(updatedGame);
       setActiveGame(updatedGame);
       await loadDuelsData();
     } else {
       AudioEngine.playWrong();
-      onUpdateUserStats(0, 0, currentQuestion.id, undefined, currentQuestion.id, false);
+      onUpdateUserStats(0, 0, currentQuestion.id);
 
       // Failed answer -> turn goes to rival!
       myStreak = 0;
       const rivalUid = isHost ? (activeGame.guestPlayerUid || 'bot_ai') : activeGame.hostPlayerUid;
-      const targetRivalName = isHost ? (activeGame.guestPlayerName || 'Rival') : activeGame.hostPlayerName;
-
-      // Disparador d'esdeveniment: ÚNICA notificació quan realment es passa el torn al rival
-      if (rivalUid && !rivalUid.startsWith('bot_')) {
-        triggerTurnPushNotification({
-          matchId: activeGame.id,
-          senderUid: user.uid,
-          senderName: user.displayName,
-          targetUid: rivalUid,
-          customMessage: `És el teu torn a la partida amb ${user.displayName}!`
-        }).then(() => {
-          setFcmPushAlert(`📲 Hem avisat a ${targetRivalName} que és el seu torn!`);
-          setTimeout(() => setFcmPushAlert(null), 3500);
-        }).catch(console.warn);
-      }
 
       const updatedGame: DuelGame = {
         ...activeGame,
@@ -807,11 +709,6 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
       drawWheelCanvas(wheelAngle);
     });
 
-    // Auto-centrar la ruleta a la pantalla
-    setTimeout(() => {
-      wheelContainerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }, 80);
-
     if (!isCorrectAnswer) {
       // Failed answer -> exit arena and show turn passed modal
       setShowTurnPassedModal(true);
@@ -882,8 +779,6 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
       await saveDuelGameUpdate(challengeGame);
       setShowNewMatchModal(false);
       await loadDuelsData();
-      setFcmPushAlert(`⚔️ Partida creada amb ${targetUser.displayName}. És el teu torn de girar la ruleta!`);
-      setTimeout(() => setFcmPushAlert(null), 3500);
     } catch (e) {
       console.warn('Error launching challenge:', e);
     } finally {
@@ -1201,17 +1096,6 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
       lastWinnerUid?: string;
       lastWinnerName?: string;
       involvesCurrentUser: boolean;
-      matches: Array<{
-        id: string;
-        endedAt: number | string;
-        timeAgoText: string;
-        p1Score: number;
-        p2Score: number;
-        isP1Winner: boolean;
-        isP2Winner: boolean;
-        isDraw: boolean;
-        winnerName?: string;
-      }>;
     }>();
 
     // 1. Processar totes les partides finalitzades de Supabase
@@ -1265,18 +1149,6 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
 
       const matchTimestamp = typeof match.endedAt === 'number' ? match.endedAt : new Date(match.endedAt || Date.now()).getTime();
 
-      const matchItem = {
-        id: String(match.id || match.gameId || `${pairKey}_${matchTimestamp}_${Math.random()}`),
-        endedAt: match.endedAt,
-        timeAgoText: match.timeAgoText || 'Recent',
-        p1Score: matchP1Score,
-        p2Score: matchP2Score,
-        isP1Winner,
-        isP2Winner,
-        isDraw,
-        winnerName: match.winnerName
-      };
-
       const existing = map.get(pairKey);
       if (!existing) {
         map.set(pairKey, {
@@ -1297,12 +1169,10 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
           lastMatchScoreP2: matchP2Score,
           lastWinnerUid: match.winnerUid,
           lastWinnerName: match.winnerName,
-          involvesCurrentUser: involvesMe,
-          matches: [matchItem]
+          involvesCurrentUser: involvesMe
         });
       } else {
         existing.totalMatches += 1;
-        existing.matches.push(matchItem);
         if (isP1Winner) existing.p1Wins += 1;
         else if (isP2Winner) existing.p2Wins += 1;
         else if (isDraw) existing.draws += 1;
@@ -1341,22 +1211,12 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
           lastMatchTimeAgo: 'Recent',
           lastMatchScoreP1: 0,
           lastMatchScoreP2: 0,
-          involvesCurrentUser: involvesMe,
-          matches: []
+          involvesCurrentUser: involvesMe
         });
       }
     });
 
-    const result = Array.from(map.values());
-    result.forEach(pair => {
-      pair.matches.sort((a, b) => {
-        const tA = typeof a.endedAt === 'number' ? a.endedAt : new Date(a.endedAt || 0).getTime();
-        const tB = typeof b.endedAt === 'number' ? b.endedAt : new Date(b.endedAt || 0).getTime();
-        return tB - tA;
-      });
-    });
-
-    return result.sort((a, b) => {
+    return Array.from(map.values()).sort((a, b) => {
       if (a.involvesCurrentUser && !b.involvesCurrentUser) return -1;
       if (!a.involvesCurrentUser && b.involvesCurrentUser) return 1;
       const timeA = typeof a.lastMatchEndedAt === 'number' ? a.lastMatchEndedAt : new Date(a.lastMatchEndedAt || 0).getTime();
@@ -1414,14 +1274,6 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
 
   return (
     <div className="max-w-4xl mx-auto px-3 sm:px-6 py-4 sm:py-6 space-y-5">
-      {/* Banner de confirmació d'enviament de Push FCM */}
-      {fcmPushAlert && (
-        <div className="p-3 bg-gradient-to-r from-sky-950/90 to-blue-950/90 border border-sky-500/50 rounded-2xl text-xs sm:text-sm text-sky-200 font-bold flex items-center gap-2 shadow-lg shadow-sky-500/20 animate-fade-in">
-          <span className="text-base">🚀</span>
-          <span>{fcmPushAlert}</span>
-        </div>
-      )}
-
       {/* 1. Main Banner & Quick Actions */}
       <div className="bg-slate-900 border border-slate-800 rounded-3xl p-4 sm:p-6 shadow-xl relative overflow-hidden">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
@@ -1547,7 +1399,7 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
 
       {/* 2. Active Match Arena / Wheel View */}
       {activeGame && (
-        <div ref={activeArenaRef} className="bg-slate-900 border border-slate-800 rounded-3xl p-4 sm:p-6 shadow-2xl space-y-5">
+        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-4 sm:p-6 shadow-2xl space-y-5">
           {/* Top Bar: Return to list & Share Code & Abandonar/Rendir-se */}
           <div className="flex items-center justify-between gap-2 pb-3 border-b border-slate-800 flex-wrap">
             <button
@@ -1727,23 +1579,12 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
 
           {/* 3. Question Arena View (Rendered when question active) */}
           {currentQuestion && (
-            <div ref={questionContainerRef} className="bg-slate-950 border border-slate-800 rounded-2xl p-4 sm:p-6 space-y-4 animate-fadeIn">
+            <div className="bg-slate-950 border border-slate-800 rounded-2xl p-4 sm:p-6 space-y-4 animate-fadeIn">
               {/* Question Header */}
               <div className="flex items-center justify-between gap-2 flex-wrap pb-2 border-b border-slate-800">
                 <div className="flex items-center gap-2">
                   <span className="text-base">{currentQuestion.categoryIcon}</span>
                   <span className="text-xs font-black text-slate-200">{currentQuestion.categoryName}</span>
-                  {(() => {
-                    const failCount = user.questionMistakesCount?.[currentQuestion.id] || (user.failedQuestionIds?.includes(currentQuestion.id) ? 1 : 0);
-                    if (failCount > 0) {
-                      return (
-                        <span className="px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/40 text-[10px] font-black flex items-center gap-1 animate-pulse">
-                          <span>⚠️ Has fallat aquesta pregunta {failCount} {failCount === 1 ? 'vegada' : 'vegades'}</span>
-                        </span>
-                      );
-                    }
-                    return null;
-                  })()}
                 </div>
                 {isStripeChallenge && (
                   <span className="px-2.5 py-1 rounded-full bg-red-500/20 text-red-400 border border-red-500/40 text-[10px] font-black uppercase tracking-wider animate-pulse flex items-center gap-1">
@@ -1874,7 +1715,7 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
           )}
 
           {/* 4. Roulette Wheel Arena (Keep in DOM so canvas NEVER unmounts or disappears) */}
-          <div ref={wheelContainerRef} className={`flex flex-col items-center justify-center py-4 relative ${currentQuestion ? 'hidden' : 'flex'}`}>
+          <div className={`flex flex-col items-center justify-center py-4 relative ${currentQuestion ? 'hidden' : 'flex'}`}>
             {/* Top Red Pointer (12 o'clock) */}
             <div className="relative z-20 -mb-3 flex flex-col items-center">
               <div className="w-0 h-0 border-l-[10px] border-l-transparent border-r-[10px] border-r-transparent border-t-[18px] border-t-red-600 drop-shadow-md animate-pulse" />
@@ -2107,35 +1948,44 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
             )}
           </div>
 
-          {/* RETAR OPOSITORS (TOTS ELS REGISTRATS) */}
+          {/* RETAR OPOSITORS (ONLINE / REGISTRATS) */}
           <div className="space-y-3 pt-2">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <h3 className="text-sm font-black text-white flex items-center gap-2">
                 <Users className="w-4 h-4 text-sky-400" />
-                <span>RETAR OPOSITORS ({registeredUsers.length})</span>
+                <span>RETAR OPOSITORS (EN LÍNIA I REGISTRATS)</span>
               </h3>
               
-              {/* Cercador directe d'opositors */}
-              <div className="relative w-full sm:w-64">
-                <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  value={userSearchTerm}
-                  onChange={(e) => setUserSearchTerm(e.target.value)}
-                  placeholder="Cercar opositor per nom o rang..."
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-8 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-sky-500"
-                />
+              <div className="flex items-center bg-slate-950 rounded-xl p-0.5 border border-slate-800 text-[11px] font-bold">
+                <button
+                  onClick={() => setUserFilterTab('all')}
+                  className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                    userFilterTab === 'all' ? 'bg-sky-500 text-white shadow' : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  Tots els registrats ({registeredUsers.length})
+                </button>
+                <button
+                  onClick={() => setUserFilterTab('online')}
+                  className={`px-2.5 py-1 rounded-lg flex items-center gap-1.5 transition-all cursor-pointer ${
+                    userFilterTab === 'online' ? 'bg-emerald-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                  <span>Connectats en temps real ({registeredUsers.filter(u => u.isOnline).length})</span>
+                </button>
               </div>
             </div>
 
-            {registeredUsers.length === 0 ? (
+            {registeredUsers.filter(u => userFilterTab === 'all' || u.isOnline).length === 0 ? (
               <div className="p-4 rounded-2xl bg-slate-900/40 border border-slate-800 text-center text-slate-500 text-xs">
-                Carregant opositors registrats...
+                No hi ha cap altre opositor en línia ara mateix. Pots retar els usuaris registrats de forma asíncrona canviant a "Tots els registrats" o crear una sala amb codi!
               </div>
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 max-h-[500px] overflow-y-auto pr-1">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
                 {registeredUsers
-                  .filter(u => !userSearchTerm.trim() || u.displayName.toLowerCase().includes(userSearchTerm.toLowerCase()) || u.rank.title.toLowerCase().includes(userSearchTerm.toLowerCase()))
+                  .filter(u => userFilterTab === 'all' || u.isOnline)
+                  .slice(0, 9)
                   .map((target) => (
                     <div
                       key={target.uid}
@@ -2265,7 +2115,7 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
           {isLoadingHistory && filteredH2HPairs.length === 0 ? (
             <div className="p-10 rounded-2xl bg-slate-900/40 border border-slate-800 text-center text-slate-400 text-xs flex flex-col items-center justify-center gap-3">
               <RotateCw className="w-6 h-6 animate-spin text-amber-400" />
-              <span>Calculant els marcadors cara a cara...</span>
+              <span>Calculant els marcadors cara a cara des de Supabase...</span>
             </div>
           ) : filteredH2HPairs.length === 0 ? (
             <div className="p-8 rounded-2xl bg-slate-900/60 border border-slate-800 text-center text-slate-400 text-xs space-y-2">
@@ -2290,7 +2140,6 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
 
                 const rivalIdToChallenge = pair.p1Id === user.uid ? pair.p2Id : (pair.p2Id === user.uid ? pair.p1Id : pair.p2Id);
                 const rivalNameToChallenge = pair.p1Id === user.uid ? pair.p2Name : (pair.p2Id === user.uid ? pair.p1Name : pair.p2Name);
-                const isExpanded = expandedH2hPairKey === pair.pairKey;
 
                 return (
                   <div
@@ -2456,37 +2305,11 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
                       />
                     </div>
 
-                    {/* Card Footer: Detailed Date, Breakdown Toggle & Action */}
+                    {/* Card Footer: Detailed Date & Action */}
                     <div className="pt-3 border-t border-slate-800/70 flex items-center justify-between gap-3 flex-wrap text-xs">
-                      <div className="flex items-center gap-2.5 flex-wrap">
-                        <div className="text-[11px] text-slate-400 flex items-center gap-1.5">
-                          <Clock className="w-3.5 h-3.5 text-slate-500" />
-                          <span>Darrer duel: <b className="text-white">{formatFullCatalanDate(pair.lastMatchEndedAt)}</b></span>
-                        </div>
-
-                        {pair.matches && pair.matches.length > 0 && (
-                          <button
-                            type="button"
-                            onClick={() => setExpandedH2hPairKey(isExpanded ? null : pair.pairKey)}
-                            className={`px-2.5 py-1 rounded-lg border text-[11px] font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm ${
-                              isExpanded
-                                ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
-                                : 'bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border-slate-700'
-                            }`}
-                          >
-                            {isExpanded ? (
-                              <>
-                                <ChevronUp className="w-3.5 h-3.5 text-amber-400" />
-                                <span>Plegar partides</span>
-                              </>
-                            ) : (
-                              <>
-                                <ChevronDown className="w-3.5 h-3.5 text-amber-400" />
-                                <span>Veure historial ({pair.matches.length})</span>
-                              </>
-                            )}
-                          </button>
-                        )}
+                      <div className="text-[11px] text-slate-400 flex items-center gap-1.5">
+                        <Clock className="w-3.5 h-3.5 text-slate-500" />
+                        <span>Darrer duel: <b className="text-white">{formatFullCatalanDate(pair.lastMatchEndedAt)}</b></span>
                       </div>
 
                       <button
@@ -2498,68 +2321,6 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
                         <span>REVANTXA 1v1</span>
                       </button>
                     </div>
-
-                    {/* Desglossament desplegable de totes les partides entre ells */}
-                    {isExpanded && pair.matches && pair.matches.length > 0 && (
-                      <div className="mt-3.5 pt-3.5 border-t border-slate-800/90 space-y-2 animate-fadeIn">
-                        <div className="flex items-center justify-between text-xs font-bold text-slate-300 px-1">
-                          <span className="flex items-center gap-1.5 text-amber-400">
-                            <Trophy className="w-3.5 h-3.5" />
-                            <span>Desglossament de duels entre {pair.p1Name} i {pair.p2Name}</span>
-                          </span>
-                          <span className="text-[10px] text-slate-500 font-normal">Més recents primer</span>
-                        </div>
-
-                        <div className="space-y-1.5 max-h-72 overflow-y-auto pr-1">
-                          {pair.matches.map((m, mIdx) => (
-                            <div
-                              key={m.id || mIdx}
-                              className="flex items-center justify-between gap-3 p-2.5 rounded-xl bg-slate-950/90 border border-slate-800/80 hover:border-slate-700 text-xs transition-all"
-                            >
-                              <div className="flex items-center gap-2 min-w-0">
-                                <span className="text-[10px] font-mono font-bold text-slate-500 shrink-0 w-6">
-                                  #{pair.matches.length - mIdx}
-                                </span>
-                                <div className="flex flex-col min-w-0">
-                                  <span className="text-slate-200 font-semibold truncate">
-                                    {formatFullCatalanDate(m.endedAt)}
-                                  </span>
-                                  <span className="text-[10px] text-slate-400">
-                                    {m.timeAgoText}
-                                  </span>
-                                </div>
-                              </div>
-
-                              <div className="flex items-center gap-2 shrink-0">
-                                <div className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-800 font-mono font-black text-xs">
-                                  <span className={m.isP1Winner ? 'text-amber-400 font-extrabold' : 'text-slate-400'}>
-                                    {m.p1Score}
-                                  </span>
-                                  <span className="text-slate-600">-</span>
-                                  <span className={m.isP2Winner ? 'text-amber-400 font-extrabold' : 'text-slate-400'}>
-                                    {m.p2Score}
-                                  </span>
-                                </div>
-
-                                {m.isDraw ? (
-                                  <span className="px-2 py-0.5 rounded-md bg-sky-500/15 text-sky-300 border border-sky-500/25 text-[10px] font-extrabold">
-                                    Empat
-                                  </span>
-                                ) : m.isP1Winner ? (
-                                  <span className="px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-300 border border-emerald-500/25 text-[10px] font-extrabold truncate max-w-[110px]">
-                                    🏆 {pair.p1Name}
-                                  </span>
-                                ) : (
-                                  <span className="px-2 py-0.5 rounded-md bg-purple-500/15 text-purple-300 border border-purple-500/25 text-[10px] font-extrabold truncate max-w-[110px]">
-                                    🏆 {pair.p2Name}
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
                   </div>
                 );
               })}
@@ -2577,6 +2338,10 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
               <div className="flex items-center gap-2 flex-wrap">
                 <Trophy className="w-5 h-5 text-amber-400 shrink-0" />
                 <h3 className="text-base font-black text-white">Historial de Duels / Últims Resultats</h3>
+                <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[10px] font-black flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  Supabase Live
+                </span>
               </div>
               <p className="text-xs text-slate-400 mt-1">
                 Consulta en temps real les partides finalitzades i registrades oficialment a la base de dades.
@@ -2612,7 +2377,7 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
           {isLoadingHistory && finishedHistory.length === 0 ? (
             <div className="p-10 rounded-2xl bg-slate-900/40 border border-slate-800 text-center text-slate-400 text-xs flex flex-col items-center justify-center gap-3">
               <RotateCw className="w-6 h-6 animate-spin text-amber-400" />
-              <span>Consultant l'historial de marcadors...</span>
+              <span>Consultant l'historial de marcadors a Supabase...</span>
             </div>
           ) : filteredFinishedHistory.length === 0 ? (
             <div className="p-8 rounded-2xl bg-slate-900/60 border border-slate-800 text-center text-slate-400 text-xs space-y-2">
@@ -2758,7 +2523,7 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
 
                     {/* Footer Info */}
                     <div className="pt-2.5 border-t border-slate-800/60 flex items-center justify-between text-[10px] text-slate-500">
-                      <span>Partida 1v1 oficial registrada</span>
+                      <span>Partida 1v1 guardada a Supabase</span>
                       <span className="font-mono">ID: {match.id.substring(0, 8)}</span>
                     </div>
                   </div>
@@ -2806,8 +2571,24 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
               <div className="flex items-center justify-between gap-2">
                 <span className="text-xs font-black text-slate-300 flex items-center gap-1.5">
                   <Users className="w-3.5 h-3.5 text-sky-400" />
-                  <span>Opositors Registrats ({registeredUsers.length})</span>
+                  <span>Opositors Registrats i En Línia</span>
                 </span>
+                
+                <div className="flex items-center bg-slate-950 rounded-lg p-0.5 border border-slate-800 text-[10px] font-bold">
+                  <button
+                    onClick={() => setUserFilterTab('all')}
+                    className={`px-2 py-0.5 rounded ${userFilterTab === 'all' ? 'bg-sky-500 text-white' : 'text-slate-400'}`}
+                  >
+                    Tots ({registeredUsers.length})
+                  </button>
+                  <button
+                    onClick={() => setUserFilterTab('online')}
+                    className={`px-2 py-0.5 rounded flex items-center gap-1 ${userFilterTab === 'online' ? 'bg-emerald-600 text-white' : 'text-slate-400'}`}
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    <span>En línia ({registeredUsers.filter(u => u.isOnline).length})</span>
+                  </button>
+                </div>
               </div>
 
               {/* Search input */}
@@ -2822,9 +2603,10 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
                 />
               </div>
 
-              {/* List of registered users */}
+              {/* List of registered / online users */}
               <div className="flex-1 overflow-y-auto space-y-1.5 pr-1 max-h-[240px]">
                 {registeredUsers
+                  .filter(u => userFilterTab === 'all' || u.isOnline)
                   .filter(u => !userSearchTerm.trim() || u.displayName.toLowerCase().includes(userSearchTerm.toLowerCase()) || u.rank.title.toLowerCase().includes(userSearchTerm.toLowerCase()))
                   .map(target => (
                     <div 

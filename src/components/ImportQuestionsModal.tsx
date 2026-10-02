@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Question } from '../types';
 import { addCustomQuestions } from '../data/questionsBank';
-import { Upload, FileText, CheckCircle2, AlertCircle, X, Download } from 'lucide-react';
+import { Upload, FileText, CheckCircle2, AlertCircle, X, Download, Trash2, Filter } from 'lucide-react';
 
 interface ImportQuestionsModalProps {
   isOpen: boolean;
@@ -16,6 +16,7 @@ export const ImportQuestionsModal: React.FC<ImportQuestionsModalProps> = ({
 }) => {
   const [inputText, setInputText] = useState('');
   const [statusMsg, setStatusMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [onlyActualitat, setOnlyActualitat] = useState(true);
 
   if (!isOpen) return null;
 
@@ -31,7 +32,37 @@ export const ImportQuestionsModal: React.FC<ImportQuestionsModalProps> = ({
     reader.readAsText(file);
   };
 
-  const processImport = () => {
+  const handlePurgeNonActualitat = () => {
+    try {
+      if (!inputText.trim()) {
+        setStatusMsg({ type: 'error', text: 'Enganxa o penja primer el contingut JSON.' });
+        return;
+      }
+      const parsed = JSON.parse(inputText);
+      const arr = Array.isArray(parsed) ? parsed : [parsed];
+      const initialCount = arr.length;
+      const filtered = arr.filter((item: any) => {
+        const ambitStr = String(item.ambit || '').trim().toLowerCase();
+        const seccioStr = String(item.seccio || '').trim().toLowerCase();
+        const guiaTemaStr = String(item.guiaTema || '').trim().toLowerCase();
+        return (
+          ambitStr === 'actualitat' ||
+          ambitStr.includes('actualitat') ||
+          seccioStr.includes('actualitat') ||
+          guiaTemaStr.includes('actualitat')
+        );
+      });
+      setInputText(JSON.stringify(filtered, null, 2));
+      setStatusMsg({
+        type: 'success',
+        text: `S'han eliminat ${initialCount - filtered.length} preguntes. Ara el JSON en conté només ${filtered.length} d'Actualitat.`
+      });
+    } catch (e: any) {
+      setStatusMsg({ type: 'error', text: 'El JSON no és vàlid: ' + e.message });
+    }
+  };
+
+  const processImport = async () => {
     try {
       if (!inputText.trim()) {
         setStatusMsg({ type: 'error', text: 'Introdueix o penja un fitxer amb preguntes.' });
@@ -51,15 +82,30 @@ export const ImportQuestionsModal: React.FC<ImportQuestionsModalProps> = ({
         return;
       }
 
+      let sourceList = parsed;
+      if (onlyActualitat) {
+        sourceList = sourceList.filter((item: any) => {
+          const ambitStr = String(item.ambit || '').trim().toLowerCase();
+          const seccioStr = String(item.seccio || '').trim().toLowerCase();
+          const guiaTemaStr = String(item.guiaTema || '').trim().toLowerCase();
+          return (
+            ambitStr === 'actualitat' ||
+            ambitStr.includes('actualitat') ||
+            seccioStr.includes('actualitat') ||
+            guiaTemaStr.includes('actualitat')
+          );
+        });
+      }
+
       const validQuestions: Question[] = [];
 
-      parsed.forEach((item, idx) => {
+      sourceList.forEach((item, idx) => {
         if (item.pregunta && Array.isArray(item.opcions) && item.opcions.length >= 2 && typeof item.resposta === 'number') {
           validQuestions.push({
             id: item.id || `custom_${Date.now()}_${idx}`,
-            ambit: item.ambit || 'Àmbit A',
-            seccio: item.seccio || 'General',
-            guiaTema: item.guiaTema || 'Temari Guia 2026',
+            ambit: item.ambit || 'Actualitat',
+            seccio: item.seccio || 'Actualitat',
+            guiaTema: item.guiaTema || 'Actualitat 2026',
             guiaPagina: item.guiaPagina || 'Guia Oficial',
             pregunta: item.pregunta,
             opcions: item.opcions,
@@ -72,12 +118,12 @@ export const ImportQuestionsModal: React.FC<ImportQuestionsModalProps> = ({
       });
 
       if (validQuestions.length === 0) {
-        setStatusMsg({ type: 'error', text: 'No s\'han trobat preguntes vàlides en el contingut proporcionat.' });
+        setStatusMsg({ type: 'error', text: 'No s\'han trobat preguntes vàlides de l\'Àmbit Actualitat en el contingut.' });
         return;
       }
 
-      addCustomQuestions(validQuestions);
-      setStatusMsg({ type: 'success', text: `S'han importat amb èxit ${validQuestions.length} preguntes al banc del joc!` });
+      await addCustomQuestions(validQuestions);
+      setStatusMsg({ type: 'success', text: `S'han importat i sincronitzat al núvol ${validQuestions.length} preguntes d'Actualitat!` });
       onQuestionsImported(validQuestions.length);
 
       setTimeout(() => {
@@ -129,26 +175,51 @@ export const ImportQuestionsModal: React.FC<ImportQuestionsModalProps> = ({
             Pots carregar fitxers de preguntes personals en format JSON o enganxar-los directament aquí per incorporar-los al <b>Tauler de l'Oca</b> i als <b>Duels 1v1</b>.
           </p>
 
-          {/* Upload Button */}
-          <div className="flex items-center gap-3">
-            <label className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-sky-400 font-bold rounded-xl border border-slate-700 flex items-center gap-2 cursor-pointer transition-colors">
-              <Upload className="w-4 h-4" />
-              <span>Pujar fitxer .json</span>
-              <input
-                type="file"
-                accept=".json,.txt"
-                onChange={handleFileUpload}
-                className="hidden"
-              />
-            </label>
+          {/* Upload Button & Filter Options */}
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <label className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-sky-400 font-bold rounded-xl border border-slate-700 flex items-center gap-2 cursor-pointer transition-colors">
+                <Upload className="w-4 h-4" />
+                <span>Pujar fitxer .json</span>
+                <input
+                  type="file"
+                  accept=".json,.txt"
+                  onChange={handleFileUpload}
+                  className="hidden"
+                />
+              </label>
 
-            <button
-              type="button"
-              onClick={() => setInputText(sampleTemplate)}
-              className="px-3 py-2 text-slate-400 hover:text-white underline cursor-pointer text-xs"
-            >
-              Carregar plantilla d'exemple
-            </button>
+              <button
+                type="button"
+                onClick={() => setInputText(sampleTemplate)}
+                className="px-3 py-2 text-slate-400 hover:text-white underline cursor-pointer text-xs"
+              >
+                Carregar plantilla d'exemple
+              </button>
+            </div>
+
+            {/* Banner de filtre Actualitat */}
+            <div className="p-3 bg-emerald-950/40 border border-emerald-500/30 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+              <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-emerald-200">
+                <input
+                  type="checkbox"
+                  checked={onlyActualitat}
+                  onChange={(e) => setOnlyActualitat(e.target.checked)}
+                  className="w-4 h-4 rounded text-emerald-500 focus:ring-emerald-400 bg-slate-900 border-slate-700"
+                />
+                <span>Eliminar totes excepte <b>Àmbit Actualitat</b></span>
+              </label>
+
+              <button
+                type="button"
+                onClick={handlePurgeNonActualitat}
+                disabled={!inputText.trim()}
+                className="px-3 py-1.5 bg-rose-600 hover:bg-rose-500 disabled:opacity-40 text-white font-bold text-xs rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Purgar JSON: Deixar NOMÉS Actualitat</span>
+              </button>
+            </div>
           </div>
 
           <textarea

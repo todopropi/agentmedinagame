@@ -3,6 +3,7 @@ import { SPECIALIZED_SHIELDS } from '../data/badges';
 
 interface ShieldRendererProps {
   shieldId: string;
+  shieldData?: any;
   size?: number;
   showName?: boolean;
   glow?: boolean;
@@ -14,12 +15,54 @@ interface ShieldRendererProps {
  */
 export const ShieldRenderer: React.FC<ShieldRendererProps> = ({ 
   shieldId, 
+  shieldData,
   size = 72, 
   showName = false,
   glow = false 
 }) => {
-  const shield = SPECIALIZED_SHIELDS.find(s => s.id === shieldId) || SPECIALIZED_SHIELDS[0];
+  const shield = shieldData || SPECIALIZED_SHIELDS.find(s => s.id === shieldId) || SPECIALIZED_SHIELDS[0];
   const uid = React.useId().replace(/:/g, '');
+
+  // Render borderless image if requested by admin
+  if (shield.customLogoUrl && shield.hideBorder) {
+    const scale = shield.customLogoScale ?? 1.05;
+    const roundedClass = 
+      shield.logoShape === 'circle' ? 'rounded-full' :
+      shield.logoShape === 'square' ? 'rounded-none' : 'rounded-2xl';
+
+    return (
+      <div className="flex flex-col items-center justify-center select-none">
+        <div 
+          className="relative flex items-center justify-center transition-transform hover:scale-105"
+          style={{ 
+            width: size, 
+            height: size * 1.18,
+            filter: glow 
+              ? 'drop-shadow(0 0 14px rgba(234, 179, 8, 0.55)) drop-shadow(0 4px 10px rgba(0,0,0,0.7))'
+              : 'drop-shadow(0 4px 8px rgba(0,0,0,0.6))'
+          }}
+        >
+          <div className="w-full h-full flex items-center justify-center p-0.5">
+            <img 
+              src={shield.customLogoUrl} 
+              alt={shield.nom} 
+              className={`max-w-full max-h-full ${shield.logoFit === 'cover' ? 'w-full h-full object-cover' : 'object-contain'} ${roundedClass}`}
+              style={{
+                transform: `scale(${scale})`,
+                transformOrigin: 'center'
+              }}
+              onError={(e) => { (e.currentTarget as HTMLElement).style.display = 'none'; }}
+            />
+          </div>
+        </div>
+        {showName && (
+          <span className="text-xs font-bold text-amber-400 mt-1.5 tracking-wide text-center">
+            {shield.nom}
+          </span>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col items-center justify-center select-none">
@@ -129,7 +172,23 @@ export const ShieldRenderer: React.FC<ShieldRendererProps> = ({
           )}
 
           {/* 3. UNIT SPECIFIC ARTWORK MATCHING USER'S PHOTOS */}
-
+          {shield.customLogoUrl ? (
+            <foreignObject x="12" y="20" width="76" height="76">
+              <div className="w-full h-full flex flex-col items-center justify-center p-1 overflow-hidden">
+                <img 
+                  src={shield.customLogoUrl} 
+                  alt={shield.nom} 
+                  className={`max-w-full max-h-full ${shield.logoFit === 'cover' ? 'w-full h-full object-cover' : 'object-contain'} rounded-xl drop-shadow-md`}
+                  style={{
+                    transform: `scale(${shield.customLogoScale || 1})`,
+                    transformOrigin: 'center'
+                  }}
+                  onError={(e) => { (e.currentTarget as HTMLElement).style.display = 'none'; }}
+                />
+              </div>
+            </foreignObject>
+          ) : (
+            <>
           {/* ESCUT GENÈRIC PVC (Color) */}
           {shield.id === 'generic_pvc' && (
             <g transform="translate(50, 58)">
@@ -382,6 +441,60 @@ export const ShieldRenderer: React.FC<ShieldRendererProps> = ({
                 <path d="M -4,-16 C 4,-12 -4,-4 4,2" fill="none" stroke="#f8fafc" strokeWidth="1.2" />
               </g>
             </g>
+          )}
+
+          {/* ESCUT LLEGENDARI (Casella 100 - Crown, Laurel & Golden Senyera) */}
+          {(shield.id === 'escut_llegenda' || shield.id.startsWith('escut_llegenda_')) && (
+            <g transform="translate(50, 58)">
+              {/* Golden Crown on top */}
+              <g transform="translate(0, -32)">
+                <polygon points="-14,8 -16,-2 -8,2 0,-8 8,2 16,-2 14,8" fill={`url(#goldGrad_${uid})`} stroke="#b45309" strokeWidth="0.8" />
+                <circle cx="0" cy="-8" r="1.5" fill="#fef08a" />
+                <circle cx="-16" cy="-2" r="1.2" fill="#fef08a" />
+                <circle cx="16" cy="-2" r="1.2" fill="#fef08a" />
+              </g>
+              {/* Laurel Wreath */}
+              <g fill="none" stroke={`url(#goldGrad_${uid})`} strokeWidth="1.8">
+                <path d="M -22,14 C -28,-4 -18,-18 -4,-22" />
+                <path d="M 22,14 C 28,-4 18,-18 4,-22" />
+              </g>
+              {/* Laurel leaves */}
+              <g fill={`url(#goldGrad_${uid})`}>
+                <circle cx="-22" cy="0" r="2.2" />
+                <circle cx="-24" cy="-8" r="2.2" />
+                <circle cx="-18" cy="-16" r="2.2" />
+                <circle cx="-10" cy="-21" r="2.2" />
+                <circle cx="22" cy="0" r="2.2" />
+                <circle cx="24" cy="-8" r="2.2" />
+                <circle cx="18" cy="-16" r="2.2" />
+                <circle cx="10" cy="-21" r="2.2" />
+              </g>
+              {/* Central Golden Diamond Emblem with Senyera */}
+              <g transform="translate(0, 0)">
+                <rect x="-14" y="-14" width="28" height="28" transform="rotate(45)" fill="#fef08a" stroke={`url(#goldGrad_${uid})`} strokeWidth="2" />
+                {/* 4 Red Senyera Stripes */}
+                <g clipPath={`url(#diamondClip_${uid})`}>
+                  <rect x="-9" y="-12" width="3" height="24" fill="#dc2626" />
+                  <rect x="-3" y="-12" width="3" height="24" fill="#dc2626" />
+                  <rect x="3" y="-12" width="3" height="24" fill="#dc2626" />
+                  <rect x="9" y="-12" width="3" height="24" fill="#dc2626" />
+                </g>
+                {/* Centered Diamond Star */}
+                <polygon points="0,-10 3,-3 10,0 3,3 0,10 -3,3 -10,0 -3,-3" fill="#ffffff" stroke={`url(#goldGrad_${uid})`} strokeWidth="0.8" />
+                <circle cx="0" cy="0" r="2" fill="#eab308" />
+              </g>
+              <text x="0" y="28" textAnchor="middle" fill={`url(#goldGrad_${uid})`} fontSize="6" fontWeight="900" fontFamily="sans-serif" letterSpacing="0.8">
+                {shield.id === 'escut_llegenda_ambit_a' ? 'LLEGENDA A' :
+                 shield.id === 'escut_llegenda_ambit_b' ? 'LLEGENDA B' :
+                 shield.id === 'escut_llegenda_ambit_c' ? 'LLEGENDA C' :
+                 shield.id === 'escut_llegenda_actualitat' ? 'LLEGENDA ACT' :
+                 shield.id === 'escut_llegenda_ispc' ? 'LLEGENDA ISPC' :
+                 'LLEGENDA 100'}
+              </text>
+              <text x="0" y="44" textAnchor="middle" fill="#fde047" fontSize="4.5" fontWeight="800" fontFamily="sans-serif">mossos d'esquadra</text>
+            </g>
+          )}
+          </>
           )}
         </svg>
       </div>

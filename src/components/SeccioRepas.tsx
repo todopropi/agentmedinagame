@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import confetti from 'canvas-confetti';
 import { UserProfile, Question } from '../types';
 import { QUESTIONS_BANK } from '../data/questionsBank';
-import { CONFUSION_CONCEPTS, MNEMONIC_CARDS } from '../data/conceptsAndMistakes';
+import { CONFUSION_CONCEPTS, MNEMONIC_CARDS, subscribeToConcepts } from '../data/conceptsAndMistakes';
 import { QuestionCard } from './QuestionCard';
 import { 
   BookOpen, 
@@ -19,7 +20,13 @@ import {
   ChevronLeft,
   ChevronRight,
   Bookmark,
-  Star
+  Star,
+  Play,
+  Layers,
+  ArrowRight,
+  Award,
+  RefreshCw,
+  X
 } from 'lucide-react';
 
 interface SeccioRepasProps {
@@ -27,7 +34,14 @@ interface SeccioRepasProps {
   onRemoveFailedQuestion: (questionId: string) => void;
   onToggleSaveQuestion: (questionId: string) => void;
   onToggleSaveMnemonic?: (ruleId: string) => void;
-  onUpdateStats: (xpGained: number, meritsGained: number) => void;
+  onUpdateStats: (
+    xpGained: number, 
+    meritsGained: number, 
+    failedId?: string, 
+    savedId?: string,
+    answeredId?: string,
+    isCorrect?: boolean
+  ) => void;
 }
 
 export const SeccioRepas: React.FC<SeccioRepasProps> = ({
@@ -39,8 +53,16 @@ export const SeccioRepas: React.FC<SeccioRepasProps> = ({
 }) => {
   const [subTab, setSubTab] = useState<'fallades' | 'guardades' | 'regles_guardades' | 'confusions' | 'mnemo'>('fallades');
   const [activePracticeQuestion, setActivePracticeQuestion] = useState<Question | null>(null);
-  const [expandedConfusionId, setExpandedConfusionId] = useState<string | null>(CONFUSION_CONCEPTS[0].id);
+  const [expandedConfusionId, setExpandedConfusionId] = useState<string | null>(CONFUSION_CONCEPTS[0]?.id || null);
   const tabsRef = React.useRef<HTMLDivElement>(null);
+  const [, setConceptsTick] = useState(0);
+
+  useEffect(() => {
+    const unsub = subscribeToConcepts(() => {
+      setConceptsTick(t => t + 1);
+    });
+    return unsub;
+  }, []);
 
   const scrollTabs = (offset: number) => {
     if (tabsRef.current) {
@@ -58,11 +80,81 @@ export const SeccioRepas: React.FC<SeccioRepasProps> = ({
   const savedConfusions = CONFUSION_CONCEPTS.filter(c => savedMnemonicIds.includes(c.id));
   const totalSavedRules = savedMnemonics.length + savedConfusions.length;
 
+  // Mode Test d'Errors
+  const [isTestRunning, setIsTestRunning] = useState(false);
+  const [testAmbit, setTestAmbit] = useState<string>('tots');
+  const [testMode, setTestMode] = useState<'superacio' | 'repas'>('superacio');
+  const [testQuestionsList, setTestQuestionsList] = useState<Question[]>([]);
+  const [testCurrentIndex, setTestCurrentIndex] = useState(0);
+  const [testScore, setTestScore] = useState<{ correct: number; wrong: number; removedCount: number }>({ correct: 0, wrong: 0, removedCount: 0 });
+  const [isTestFinished, setIsTestFinished] = useState(false);
+
+  const availableAmbitsForFailed = ['tots', 'Àmbit A', 'Àmbit B', 'Àmbit C', 'Actualitat'];
+
+  const getAmbitFailedCount = (amb: string) => {
+    if (amb === 'tots') return failedQuestions.length;
+    return failedQuestions.filter(q => q.ambit === amb).length;
+  };
+
+  const handleStartErrorTest = () => {
+    let pool = failedQuestions;
+    if (testAmbit !== 'tots') {
+      pool = pool.filter(q => q.ambit === testAmbit);
+    }
+    if (pool.length === 0) return;
+    const shuffled = [...pool].sort(() => 0.5 - Math.random());
+    setTestQuestionsList(shuffled);
+    setTestCurrentIndex(0);
+    setTestScore({ correct: 0, wrong: 0, removedCount: 0 });
+    setIsTestFinished(false);
+    setIsTestRunning(true);
+    setActivePracticeQuestion(null);
+  };
+
+  const handleTestAnswerSelected = (isCorrect: boolean) => {
+    const q = testQuestionsList[testCurrentIndex];
+    if (!q) return;
+
+    if (isCorrect) {
+      if (testMode === 'superacio') {
+        onRemoveFailedQuestion(q.id);
+        setTestScore(prev => ({ ...prev, correct: prev.correct + 1, removedCount: prev.removedCount + 1 }));
+      } else {
+        setTestScore(prev => ({ ...prev, correct: prev.correct + 1 }));
+      }
+      onUpdateStats(15, 10, undefined, undefined, q.id, true);
+    } else {
+      setTestScore(prev => ({ ...prev, wrong: prev.wrong + 1 }));
+      onUpdateStats(0, 0, q.id, undefined, q.id, false);
+    }
+  };
+
+  const handleTestNextQuestion = () => {
+    if (testCurrentIndex < testQuestionsList.length - 1) {
+      setTestCurrentIndex(prev => prev + 1);
+    } else {
+      setIsTestFinished(true);
+      confetti({
+        particleCount: 120,
+        spread: 80,
+        origin: { y: 0.6 }
+      });
+    }
+  };
+
+  const handleExitTest = () => {
+    setIsTestRunning(false);
+    setIsTestFinished(false);
+    setTestQuestionsList([]);
+  };
+
   const handlePracticeOutcome = (isCorrect: boolean) => {
     if (!activePracticeQuestion) return;
     if (isCorrect) {
       onRemoveFailedQuestion(activePracticeQuestion.id);
-      onUpdateStats(15, 10);
+      onUpdateStats(15, 10, undefined, undefined, activePracticeQuestion.id, true);
+    } else {
+      onUpdateStats(0, 0, activePracticeQuestion.id, undefined, activePracticeQuestion.id, false);
     }
   };
 
@@ -213,67 +305,305 @@ export const SeccioRepas: React.FC<SeccioRepasProps> = ({
             isSaved={user.savedQuestionIds?.includes(activePracticeQuestion.id)}
             onNext={() => setActivePracticeQuestion(null)}
             nextButtonLabel="Finalitzar revisió"
+            mistakeCount={user.questionMistakesCount?.[activePracticeQuestion.id] || (user.failedQuestionIds?.includes(activePracticeQuestion.id) ? 1 : 0)}
           />
         </div>
       )}
 
       {/* TAB 1: Failed Questions Tracker */}
       {subTab === 'fallades' && !activePracticeQuestion && (
-        <div className="space-y-4">
-          {failedQuestions.length === 0 ? (
-            <div className="bg-slate-900 border border-slate-800 rounded-3xl p-12 text-center text-slate-400">
-              <CheckCircle2 className="w-12 h-12 text-emerald-400 mx-auto mb-3 animate-bounce" />
-              <h3 className="text-lg font-black text-white">Excel·lent! No tens cap error pendent de repassar</h3>
-              <p className="text-xs text-slate-400 max-w-md mx-auto mt-1">
-                Totes les preguntes que fallis al Tauler de l'Oca o als Duels 1v1 s'afegiran automàticament aquí perquè puguis reforçar el temari fins a dominar-les.
-              </p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {failedQuestions.map((q) => (
-                <div
-                  key={q.id}
-                  className="bg-slate-900 border border-red-900/40 hover:border-red-600/60 rounded-2xl p-4 sm:p-5 flex flex-col justify-between transition-all"
-                >
-                  <div>
-                    <div className="flex items-center justify-between gap-2 mb-2 text-xs">
-                      <span className="font-extrabold text-red-400 bg-red-950/60 px-2 py-0.5 rounded border border-red-800/40">
-                        {q.ambit}
-                      </span>
-                      {q.guiaPagina && (
-                        <span className="text-amber-400/90 font-mono text-[11px]">
-                          {q.guiaPagina}
+        <div className="space-y-6">
+          {/* Active Error Test Runner */}
+          {isTestRunning ? (
+            <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 sm:p-7 shadow-2xl space-y-4">
+              {!isTestFinished ? (
+                <>
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-800">
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-red-950/80 text-red-300 border border-red-800/40">
+                          🎯 Test d'Errors: {testAmbit === 'tots' ? 'Tots els àmbits' : testAmbit}
                         </span>
-                      )}
+                        <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                          testMode === 'superacio' 
+                            ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-800/40' 
+                            : 'bg-sky-950/80 text-sky-300 border border-sky-800/40'
+                        }`}>
+                          {testMode === 'superacio' ? '🗑️ Superació (s\'esborra en encertar)' : '🔁 Només repàs (no s\'esborra)'}
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-400 mt-1 font-mono">
+                        Pregunta {testCurrentIndex + 1} de {testQuestionsList.length} · Encerts: <b className="text-emerald-400">{testScore.correct}</b> · Errors: <b className="text-red-400">{testScore.wrong}</b>
+                      </p>
                     </div>
-                    <h4 className="text-sm font-bold text-white mb-2 line-clamp-3">
-                      {q.pregunta}
-                    </h4>
-                    <p className="text-xs text-slate-400 bg-slate-800/50 p-2.5 rounded-xl border border-slate-800 italic line-clamp-2">
-                      💡 {q.explicacio}
+
+                    <button
+                      type="button"
+                      onClick={handleExitTest}
+                      className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-bold transition-colors cursor-pointer self-start sm:self-auto"
+                    >
+                      ✕ Abandonar test
+                    </button>
+                  </div>
+
+                  {/* Progress bar */}
+                  <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
+                    <div 
+                      className="h-full bg-gradient-to-r from-red-500 via-amber-400 to-emerald-400 transition-all duration-300"
+                      style={{ width: `${Math.round(((testCurrentIndex + 1) / testQuestionsList.length) * 100)}%` }}
+                    />
+                  </div>
+
+                  {testQuestionsList[testCurrentIndex] && (
+                    <QuestionCard
+                      key={`test_q_${testQuestionsList[testCurrentIndex].id}_${testCurrentIndex}`}
+                      question={testQuestionsList[testCurrentIndex]}
+                      onAnswerSelected={handleTestAnswerSelected}
+                      onSaveToggle={onToggleSaveQuestion}
+                      isSaved={user.savedQuestionIds?.includes(testQuestionsList[testCurrentIndex].id)}
+                      onNext={handleTestNextQuestion}
+                      nextButtonLabel={testCurrentIndex < testQuestionsList.length - 1 ? 'Següent Pregunta ➔' : 'Finalitzar i Veure Resultats ➔'}
+                      mistakeCount={user.questionMistakesCount?.[testQuestionsList[testCurrentIndex].id] || 1}
+                    />
+                  )}
+                </>
+              ) : (
+                /* Test Finished Screen */
+                <div className="py-8 px-4 text-center space-y-4">
+                  <div className="w-16 h-16 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 flex items-center justify-center mx-auto text-2xl font-black">
+                    🏆
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-black text-white">Test d'Errors Completat!</h3>
+                    <p className="text-xs text-slate-400 max-w-md mx-auto mt-1">
+                      Has respost totes les preguntes d'aquesta sessió de repàs d'errors.
                     </p>
                   </div>
 
-                  <div className="flex items-center gap-2 mt-4 pt-3 border-t border-slate-800">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 max-w-md mx-auto">
+                    <div className="p-3 bg-slate-950 border border-slate-800 rounded-2xl">
+                      <div className="text-[10px] uppercase font-bold text-slate-400">Total</div>
+                      <div className="text-lg font-black text-white mt-0.5">{testQuestionsList.length}</div>
+                    </div>
+                    <div className="p-3 bg-slate-950 border border-slate-800 rounded-2xl">
+                      <div className="text-[10px] uppercase font-bold text-slate-400">Encerts</div>
+                      <div className="text-lg font-black text-emerald-400 mt-0.5">{testScore.correct}</div>
+                    </div>
+                    <div className="p-3 bg-slate-950 border border-slate-800 rounded-2xl col-span-2 sm:col-span-1">
+                      <div className="text-[10px] uppercase font-bold text-slate-400">Errors</div>
+                      <div className="text-lg font-black text-red-400 mt-0.5">{testScore.wrong}</div>
+                    </div>
+                  </div>
+
+                  {testMode === 'superacio' && testScore.removedCount > 0 && (
+                    <div className="p-3 bg-emerald-950/40 border border-emerald-500/40 rounded-2xl max-w-md mx-auto text-xs text-emerald-300 font-bold">
+                      ✓ Has netejat {testScore.removedCount} {testScore.removedCount === 1 ? 'pregunta' : 'preguntes'} del teu sac d'errors pendents!
+                    </div>
+                  )}
+
+                  {testMode === 'repas' && (
+                    <div className="p-3 bg-sky-950/40 border border-sky-500/40 rounded-2xl max-w-md mx-auto text-xs text-sky-300">
+                      ℹ️ Mode només repàs: Cap pregunta ha estat eliminada de la llista per permetre't continuar entrenant-les.
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-center gap-3 pt-2">
                     <button
                       type="button"
-                      onClick={() => setActivePracticeQuestion(q)}
-                      className="flex-1 py-2 bg-red-600 hover:bg-red-500 text-white font-extrabold text-xs rounded-xl text-center cursor-pointer transition-colors"
+                      onClick={handleStartErrorTest}
+                      className="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold rounded-xl flex items-center gap-2 transition-colors cursor-pointer"
                     >
-                      Repassar ara
+                      <RefreshCw className="w-3.5 h-3.5" />
+                      <span>Repetir aquest test</span>
                     </button>
                     <button
                       type="button"
-                      onClick={() => onRemoveFailedQuestion(q.id)}
-                      title="Marcar com a apresa i eliminar de fallades"
-                      className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-emerald-400 rounded-xl transition-colors cursor-pointer border border-slate-700"
+                      onClick={handleExitTest}
+                      className="px-6 py-2.5 bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white text-xs font-extrabold rounded-xl shadow-lg cursor-pointer transition-all"
                     >
-                      <Check className="w-4 h-4" />
+                      Tornar a la llista d'errors
                     </button>
                   </div>
                 </div>
-              ))}
+              )}
             </div>
+          ) : (
+            /* Test Configuration & Launcher Card */
+            failedQuestions.length > 0 && (
+              <div className="bg-gradient-to-br from-slate-900 via-slate-900 to-red-950/30 border border-red-900/40 rounded-3xl p-5 sm:p-6 shadow-xl space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className="p-2 rounded-xl bg-red-500/20 text-red-400 border border-red-500/30">
+                      <Play className="w-5 h-5 fill-current" />
+                    </div>
+                    <div>
+                      <h3 className="text-base font-black text-white flex items-center gap-2">
+                        Simulacre Personalitzat d'Errors
+                      </h3>
+                      <p className="text-xs text-slate-400">
+                        Posa't a prova només amb les preguntes fallades: tria àmbit i mode d'eliminació.
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleStartErrorTest}
+                    disabled={getAmbitFailedCount(testAmbit) === 0}
+                    className="px-5 py-2.5 bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-black rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-red-600/20 cursor-pointer transition-all active:scale-95"
+                  >
+                    <Play className="w-4 h-4 fill-current" />
+                    <span>Començar Test ({getAmbitFailedCount(testAmbit)} preguntes)</span>
+                  </button>
+                </div>
+
+                {/* Filters & Options Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-3 border-t border-slate-800/80">
+                  {/* Selector d'Àmbit */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                      <Layers className="w-3.5 h-3.5 text-red-400" />
+                      <span>Filtrar per Àmbit:</span>
+                    </label>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {availableAmbitsForFailed.map((amb) => {
+                        const count = getAmbitFailedCount(amb);
+                        const isSelected = testAmbit === amb;
+                        return (
+                          <button
+                            key={amb}
+                            type="button"
+                            onClick={() => setTestAmbit(amb)}
+                            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                              isSelected
+                                ? 'bg-red-600 text-white shadow-md shadow-red-600/30'
+                                : 'bg-slate-800/90 text-slate-400 hover:text-slate-200 hover:bg-slate-700'
+                            }`}
+                          >
+                            <span>{amb === 'tots' ? 'Tots els àmbits' : amb}</span>
+                            <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${
+                              isSelected ? 'bg-red-800 text-white' : 'bg-slate-900 text-slate-400'
+                            }`}>
+                              {count}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Selector de Mode (2 opcions) */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                      <Check className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>Mode d'esborrat en encertar:</span>
+                    </label>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setTestMode('superacio')}
+                        className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
+                          testMode === 'superacio'
+                            ? 'bg-emerald-950/60 border-emerald-500 text-emerald-200 shadow-md shadow-emerald-500/10'
+                            : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-slate-300 hover:bg-slate-850'
+                        }`}
+                      >
+                        <div className="font-extrabold text-xs flex items-center gap-1.5 text-white">
+                          <span>🗑️ Si contestes bé s'esborra</span>
+                        </div>
+                        <span className="text-[10px] text-slate-400 mt-1">
+                          Es treu de la llista d'errors en encertar.
+                        </span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setTestMode('repas')}
+                        className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
+                          testMode === 'repas'
+                            ? 'bg-sky-950/60 border-sky-500 text-sky-200 shadow-md shadow-sky-500/10'
+                            : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-slate-300 hover:bg-slate-850'
+                        }`}
+                      >
+                        <div className="font-extrabold text-xs flex items-center gap-1.5 text-white">
+                          <span>🔁 Només repàs (no s'esborra)</span>
+                        </div>
+                        <span className="text-[10px] text-slate-400 mt-1">
+                          Es manté a la llista d'errors per seguir practicant.
+                        </span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )
+          )}
+
+          {/* Llista de preguntes individuals */}
+          {!isTestRunning && (
+            <>
+              <div className="flex items-center justify-between pt-2">
+                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                  Totes les preguntes fallades ({failedQuestions.length})
+                </h4>
+              </div>
+
+              {failedQuestions.length === 0 ? (
+                <div className="bg-slate-900 border border-slate-800 rounded-3xl p-12 text-center text-slate-400">
+                  <CheckCircle2 className="w-12 h-12 text-emerald-400 mx-auto mb-3 animate-bounce" />
+                  <h3 className="text-lg font-black text-white">Excel·lent! No tens cap error pendent de repassar</h3>
+                  <p className="text-xs text-slate-400 max-w-md mx-auto mt-1">
+                    Totes les preguntes que fallis al Tauler de l'Oca o als Duels 1v1 s'afegiran automàticament aquí perquè puguis reforçar el temari fins a dominar-les.
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {failedQuestions.map((q) => (
+                    <div
+                      key={q.id}
+                      className="bg-slate-900 border border-red-900/40 hover:border-red-600/60 rounded-2xl p-4 sm:p-5 flex flex-col justify-between transition-all"
+                    >
+                      <div>
+                        <div className="flex items-center justify-between gap-2 mb-2 text-xs">
+                          <span className="font-extrabold text-red-400 bg-red-950/60 px-2 py-0.5 rounded border border-red-800/40">
+                            {q.ambit}
+                          </span>
+                          {q.guiaPagina && (
+                            <span className="text-amber-400/90 font-mono text-[11px]">
+                              {q.guiaPagina}
+                            </span>
+                          )}
+                        </div>
+                        <h4 className="text-sm font-bold text-white mb-2 line-clamp-3">
+                          {q.pregunta}
+                        </h4>
+                        <p className="text-xs text-slate-400 bg-slate-800/50 p-2.5 rounded-xl border border-slate-800 italic line-clamp-2">
+                          💡 {q.explicacio}
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-2 mt-4 pt-3 border-t border-slate-800">
+                        <button
+                          type="button"
+                          onClick={() => setActivePracticeQuestion(q)}
+                          className="flex-1 py-2 bg-red-600 hover:bg-red-500 text-white font-extrabold text-xs rounded-xl text-center cursor-pointer transition-colors"
+                        >
+                          Repassar ara
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onRemoveFailedQuestion(q.id)}
+                          title="Marcar com a apresa i eliminar de fallades"
+                          className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-emerald-400 rounded-xl transition-colors cursor-pointer border border-slate-700"
+                        >
+                          <Check className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
           )}
         </div>
       )}

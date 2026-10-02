@@ -12,7 +12,7 @@ export interface OfficialRankInfo {
   color: string;
 }
 
-export const OFFICIAL_RANKS_LIST: OfficialRankInfo[] = [
+export var OFFICIAL_RANKS_LIST: OfficialRankInfo[] = [
   { 
     id: 'mosso',
     scale: "Escala bàsica", 
@@ -100,10 +100,21 @@ export const OFFICIAL_RANKS_LIST: OfficialRankInfo[] = [
     icon: "👑", 
     color: '#dc2626',
     desc: "Oficial de màxima categoria a l'escala superior i comandament més alt de la policia catalana." 
+  },
+  { 
+    id: 'conseller_interior',
+    scale: "Escala Institucional", 
+    category: 'escala_institucional',
+    categoryName: 'Escala Institucional',
+    title: "Conseller/a d'Interior", 
+    minXp: 80000, 
+    icon: "⚜️", 
+    color: '#eab308',
+    desc: "Màxima autoritat institucional del Departament d'Interior de la Generalitat de Catalunya. Graó suprem d'honor i dedicació absoluta a la seguretat pública." 
   }
 ];
 
-export const POLICE_RANKS: PoliceRank[] = OFFICIAL_RANKS_LIST.map(r => ({
+export var POLICE_RANKS: PoliceRank[] = OFFICIAL_RANKS_LIST.map(r => ({
   id: r.id,
   name: r.title,
   category: r.category as any,
@@ -113,6 +124,67 @@ export const POLICE_RANKS: PoliceRank[] = OFFICIAL_RANKS_LIST.map(r => ({
   color: r.color,
   description: r.desc
 }));
+
+import { fetchSupabaseOfficialRanks, subscribeToOfficialRanks } from '../../supabase';
+
+/**
+ * Inicialitza i sincronitza les escales i rangs des de la taula 'official_ranks' de Supabase
+ */
+export async function initCloudOfficialRanks() {
+  try {
+    const cloudRanks = await fetchSupabaseOfficialRanks();
+    if (Array.isArray(cloudRanks) && cloudRanks.length > 0) {
+      OFFICIAL_RANKS_LIST.length = 0;
+      OFFICIAL_RANKS_LIST.push(...cloudRanks);
+
+      POLICE_RANKS.length = 0;
+      POLICE_RANKS.push(...cloudRanks.map(r => ({
+        id: r.id,
+        name: r.title || r.name,
+        category: r.category as any,
+        categoryName: r.categoryName,
+        minXp: r.minXp,
+        badgeIcon: r.icon,
+        color: r.color,
+        description: r.desc
+      })));
+
+      if (typeof window !== 'undefined') {
+        try {
+          window.dispatchEvent(new CustomEvent('official_ranks_updated', { detail: POLICE_RANKS }));
+        } catch {}
+      }
+    }
+  } catch (err) {
+    console.warn('Error inicialitzant rangs de Supabase:', err);
+  }
+}
+
+if (typeof window !== 'undefined') {
+  initCloudOfficialRanks();
+  subscribeToOfficialRanks((newRanks) => {
+    if (Array.isArray(newRanks) && newRanks.length > 0) {
+      OFFICIAL_RANKS_LIST.length = 0;
+      OFFICIAL_RANKS_LIST.push(...newRanks);
+
+      POLICE_RANKS.length = 0;
+      POLICE_RANKS.push(...newRanks.map(r => ({
+        id: r.id,
+        name: r.title || r.name,
+        category: r.category as any,
+        categoryName: r.categoryName,
+        minXp: r.minXp,
+        badgeIcon: r.icon,
+        color: r.color,
+        description: r.desc
+      })));
+
+      try {
+        window.dispatchEvent(new CustomEvent('official_ranks_updated', { detail: POLICE_RANKS }));
+      } catch {}
+    }
+  });
+}
 
 export function calculateRank(xp: number): PoliceRank {
   for (let i = POLICE_RANKS.length - 1; i >= 0; i--) {

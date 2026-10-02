@@ -11,6 +11,31 @@ export const OfficialEmblem: React.FC<OfficialEmblemProps> = ({
   className = '',
   glow = true 
 }) => {
+  const [imgError, setImgError] = React.useState(false);
+
+  if (!imgError) {
+    const calculatedWidth = Math.round(size * (756 / 958));
+    return (
+      <div 
+        className={`inline-flex items-center justify-center relative select-none shrink-0 ${className}`}
+        style={{ height: size, width: calculatedWidth }}
+      >
+        <img 
+          src="/meed-logo.png" 
+          alt="MEED - Cos d'Opositors"
+          onError={() => setImgError(true)}
+          className="w-full h-full object-contain filter transition-transform group-hover:scale-105"
+          style={{
+            filter: glow 
+              ? 'drop-shadow(0 0 12px rgba(245, 158, 11, 0.5)) drop-shadow(0 4px 8px rgba(0,0,0,0.8))' 
+              : 'drop-shadow(0 2px 5px rgba(0,0,0,0.65))'
+          }}
+          referrerPolicy="no-referrer"
+        />
+      </div>
+    );
+  }
+
   return (
     <div 
       className={`inline-block relative select-none ${className}`}

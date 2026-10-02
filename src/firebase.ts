@@ -5,6 +5,7 @@ import {
   signInWithPopup, 
   signInWithEmailAndPassword, 
   createUserWithEmailAndPassword, 
+  updateProfile,
   signOut as fbSignOut, 
   onAuthStateChanged,
   User,
@@ -91,7 +92,11 @@ const isFirebaseConfigured = Boolean(
 
 let app: FirebaseApp | null = null;
 let auth: Auth | null = null;
-let db: Firestore | null = null;
+export let db: Firestore | null = null;
+
+export function getFirestoreDb(): Firestore | null {
+  return db;
+}
 
 if (isFirebaseConfigured) {
   try {
@@ -148,7 +153,8 @@ export function getStoredLeaderboard(): UserProfile[] {
 }
 
 export function createDefaultProfile(uid: string, email: string, displayName: string, photoURL?: string): UserProfile {
-  const isAdmin = email.toLowerCase().trim() === 'opossscar@gmail.com';
+  const normEmail = email.toLowerCase().trim();
+  const isAdmin = normEmail === 'opossscar@gmail.com';
   return {
     uid,
     email,
@@ -220,10 +226,14 @@ export async function loginWithEmailPassword(email: string, pass: string): Promi
   const snap = await getDoc(userDocRef);
   if (snap.exists()) {
     const data = snap.data() as UserProfile;
+    if (cred.user.displayName && (!data.displayName || data.displayName === 'Aspirant' || data.displayName === 'Aspirant Medina')) {
+      data.displayName = cred.user.displayName;
+    }
     saveStoredLocalUser(data);
     return data;
   } else {
-    const newProf = createDefaultProfile(cred.user.uid, email, email.split('@')[0]);
+    const resolvedName = cred.user.displayName || email.split('@')[0];
+    const newProf = createDefaultProfile(cred.user.uid, email, resolvedName);
     await setDoc(userDocRef, newProf);
     saveStoredLocalUser(newProf);
     return newProf;
@@ -233,7 +243,13 @@ export async function loginWithEmailPassword(email: string, pass: string): Promi
 export async function registerWithEmailPassword(email: string, pass: string, name: string): Promise<UserProfile> {
   if (!isFirebaseConfigured || !auth || !db) throw new Error('Firebase no està configurat.');
   const cred = await createUserWithEmailAndPassword(auth, email, pass);
-  const newProfile = createDefaultProfile(cred.user.uid, email, name);
+  const trimmedName = name.trim() || email.split('@')[0] || 'Aspirant Medina';
+  try {
+    await updateProfile(cred.user, { displayName: trimmedName });
+  } catch (err) {
+    console.warn('Could not update Firebase Auth user profile displayName:', err);
+  }
+  const newProfile = createDefaultProfile(cred.user.uid, email, trimmedName);
   await setDoc(doc(db, 'users', cred.user.uid), newProfile);
   saveStoredLocalUser(newProfile);
   return newProfile;
@@ -272,15 +288,21 @@ export function initAuthListener(callback: (user: UserProfile | null) => void): 
             const snap = await getDoc(doc(db, 'users', fbUser.uid));
             if (snap.exists()) {
               const prof = snap.data() as UserProfile;
+              const localStored = getStoredLocalUser(fbUser.uid);
+              if (localStored?.lastActiveDay) {
+                prof.lastActiveDay = localStored.lastActiveDay;
+              }
               saveStoredLocalUser(prof);
               callback(prof);
               return;
             }
           } catch (err) {}
+          const localStored = getStoredLocalUser(fbUser.uid);
+          const fallbackDisplayName = fbUser.displayName || localStored?.displayName || (fbUser.email ? fbUser.email.split('@')[0] : 'Aspirant Medina');
           const newProf = createDefaultProfile(
             fbUser.uid,
             fbUser.email || 'aspirant@agentmedina.cat',
-            fbUser.displayName || 'Aspirant',
+            fallbackDisplayName,
             fbUser.photoURL || undefined
           );
           saveStoredLocalUser(newProf);
@@ -533,6 +555,17 @@ export async function recordHeadToHeadVictory(p1Uid: string, p1Name: string, p2U
     if (idx >= 0) list[idx] = rec; else list.push(rec);
     localStorage.setItem(LOCAL_H2H_PREFIX + uid, JSON.stringify(list));
   }
+}
+
+export function deleteLocalDuelGame(gameId: string, userUid: string) {
+  try {
+    const raw = localStorage.getItem(LOCAL_GAMES_PREFIX + userUid);
+    if (raw) {
+      const list: DuelGame[] = JSON.parse(raw);
+      const filtered = list.filter(g => g.id !== gameId);
+      localStorage.setItem(LOCAL_GAMES_PREFIX + userUid, JSON.stringify(filtered));
+    }
+  } catch (e) {}
 }
 
 export async function getAllRegisteredUsers(currentUserUid?: string): Promise<UserProfile[]> {
