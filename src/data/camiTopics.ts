@@ -38,7 +38,9 @@ export const CAMI_AMBITS: { id: TopicAmbitCategory; name: string; subtitle: stri
 ];
 
 export const CAMI_TOPICS_LIST: CamiTopicInfo[] = [
-  // --- TEMA A.1: HISTÒRIA DE CATALUNYA (PART I) ---
+  // =========================================================================
+  // ÀMBIT A: CONEIXEMENTS DE L'ENTORN (7 TEMES)
+  // =========================================================================
   {
     id: 'tema_a1',
     ambit: 'Àmbit A',
@@ -61,8 +63,103 @@ export const CAMI_TOPICS_LIST: CamiTopicInfo[] = [
       { id: 'a1_9', num: '9', title: "Les transformacions del segle xviii", description: "Decret de Nova Planta (1716), Cadastre, naixement de les Esquadres de Paisans a Valls (1719) i creixement econòmic." }
     ]
   },
+  {
+    id: 'tema_a2',
+    ambit: 'Àmbit A',
+    ambitName: "Coneixements de l'Entorn",
+    code: 'Tema A.2',
+    title: 'Història de Catalunya (part II)',
+    subtitle: "Del segle XIX i la Revolució Industrial fins a la recuperació democràtica",
+    description: "La Guerra del Francès, les guerres carlines, la industrialització catalana, la Renaixença, el catalanisme polític, la Mancomunitat, la República, la Guerra Civil, el franquisme i la Transició.",
+    icon: '🏭',
+    recommendedQuestions: 5,
+    subtopics: [
+      { id: 'a2_1', num: '1', title: "Revolució industrial i conflictes del s. XIX", description: "Guerra del Francès, carlisme, vapor, fàbriques tèxtils i moviment obrer." },
+      { id: 'a2_2', num: '2', title: "La Renaixença i el catalanisme polític", description: "Bases de Manresa (1892), Solidaritat Catalana i creació de la Mancomunitat de Catalunya (1914)." },
+      { id: 'a2_3', num: '3', title: "República, Guerra Civil i franquisme", description: "Estatut de Núria de 1932, Generalitat republicana, dictadura franquista i resistència clandestina." },
+      { id: 'a2_4', num: '4', title: "La Transició i recuperació de l'autogovern", description: "Retorn del president Tarradellas (1977), Constitució de 1978 i restabliment estatutari." }
+    ]
+  },
+  {
+    id: 'tema_a3',
+    ambit: 'Àmbit A',
+    ambitName: "Coneixements de l'Entorn",
+    code: 'Tema A.3',
+    title: 'Història de la policia a Catalunya',
+    subtitle: "Dels batlles i sometents a les Esquadres de Paisans i la policia autonòmica",
+    description: "Orígens medievals, sometent, Pere Anton Veciana a Valls (1719), dissolució i restabliment del Cos de Mossos d'Esquadra fins al traspàs integral de competències.",
+    icon: '🛡️',
+    recommendedQuestions: 5,
+    subtopics: [
+      { id: 'a3_1', num: '1', title: "Orígens i Esquadres de Paisans (1719)", description: "Creació per Pere Anton Veciana a Valls contra els miquelets carrasquets." },
+      { id: 'a3_2', num: '2', title: "Evolució durant els segles XIX i XX", description: "Militarització, dissolució republicana, secció d'honor del franquisme i refundació democràtica." },
+      { id: 'a3_3', num: '3', title: "Desplegament com a policia integral", description: "Llei 10/1994, desplegament territorial per comarques i substitució de les forces estatals." }
+    ]
+  },
+  {
+    id: 'tema_a4',
+    ambit: 'Àmbit A',
+    ambitName: "Coneixements de l'Entorn",
+    code: 'Tema A.4',
+    title: 'Àmbit sociolingüístic',
+    subtitle: "Llengua pròpia, règim d'oficialitat, sociolingüística i aranès",
+    description: "El català com a llengua pròpia i oficial de Catalunya, el castellà com a llengua oficial, l'aranès a l'Aran, drets lingüístics i Llei de política lingüística.",
+    icon: '🗣️',
+    recommendedQuestions: 5,
+    subtopics: [
+      { id: 'a4_1', num: '1', title: "Règim jurídic de les llengües a Catalunya", description: "Article 6 de l'EAC, cooficialitat, drets lingüístics i deure de coneixement." },
+      { id: 'a4_2', num: '2', title: "Ús social, normalització i l'occità aranès", description: "Estatut de l'aranès a l'Aran (Llei 35/2010), polítiques de foment i realitat sociolingüística." }
+    ]
+  },
+  {
+    id: 'tema_a5',
+    ambit: 'Àmbit A',
+    ambitName: "Coneixements de l'Entorn",
+    code: 'Tema A.5',
+    title: 'Marc geogràfic de Catalunya',
+    subtitle: "Relleu, hidrografia, clima, comarques, vegueries i eixos de comunicació",
+    description: "Unitats de relleu (Pirineus, Serralades Costaneres, Depressió Central), conques hidrogràfiques internes i de l'Ebre, dominis climàtics, capitals de comarca i organització en vegueries.",
+    icon: '🗺️',
+    recommendedQuestions: 5,
+    subtopics: [
+      { id: 'a5_1', num: '1', title: "Relleu, hidrografia i clima", description: "Sistemes muntanyosos, rius principals (Ter, Llobregat, Segre, Ebre) i regions climàtiques." },
+      { id: 'a5_2', num: '2', title: "Comarques, vegueries i xarxa viària", description: "Les 42 comarques i capitals, 8 vegueries oficials i principals autopistes i autovies." }
+    ]
+  },
+  {
+    id: 'tema_a6',
+    ambit: 'Àmbit A',
+    ambitName: "Coneixements de l'Entorn",
+    code: 'Tema A.6',
+    title: 'Entorn social a Catalunya',
+    subtitle: "Estructura demogràfica, immigració, serveis socials, educació i salut",
+    description: "Població, envelliment, moviments migratoris, cohesió social, mercat de treball i estructura econòmica de Catalunya.",
+    icon: '👥',
+    recommendedQuestions: 5,
+    subtopics: [
+      { id: 'a6_1', num: '1', title: "Demografia i fluxos migratoris", description: "Població de Catalunya, piràmides d'edat, natalitat, mortalitat i integració migratòria." },
+      { id: 'a6_2', num: '2', title: "Economia, ocupació i estat del benestar", description: "Sectors econòmics (serveis, indústria, primari), mercat laboral i serveis públics." }
+    ]
+  },
+  {
+    id: 'tema_a7',
+    ambit: 'Àmbit A',
+    ambitName: "Coneixements de l'Entorn",
+    code: 'Tema A.7',
+    title: 'Les tecnologies de la informació en el segle XXI',
+    subtitle: "Societat del coneixement, seguretat de la informació i ciberdelinqüència",
+    description: "Administració digital, signatura electrònica, xarxes socials, delictes informàtics, protecció de dades (RGPD) i ciberseguretat policial.",
+    icon: '💻',
+    recommendedQuestions: 5,
+    subtopics: [
+      { id: 'a7_1', num: '1', title: "Administració electrònica i identitat digital", description: "Llei 39/2015, certificat digital, seu electrònica i drets digitals de la ciutadania." },
+      { id: 'a7_2', num: '2', title: "Ciberseguretat, RGPD i cibercrim", description: "Protecció de dades (LO 3/2018), tipus de ciberatacs i unitats especialitzades de mossos." }
+    ]
+  },
 
-  // --- TEMA B.1: L’ESTATUT D’AUTONOMIA DE CATALUNYA (EAC) ---
+  // =========================================================================
+  // ÀMBIT B: INSTITUCIONAL (8 TEMES)
+  // =========================================================================
   {
     id: 'tema_b1',
     ambit: 'Àmbit B',
@@ -85,8 +182,116 @@ export const CAMI_TOPICS_LIST: CamiTopicInfo[] = [
       { id: 'b1_5', num: '5', title: "La competència en matèria de seguretat pública a l’EAC", description: "Art. 164 de l'EAC: Policia integral a tot Catalunya, comandament suprem, policies locals i Junta de Seguretat." }
     ]
   },
+  {
+    id: 'tema_b2',
+    ambit: 'Àmbit B',
+    ambitName: 'Institucional',
+    code: 'Tema B.2',
+    title: 'Les institucions polítiques de Catalunya',
+    subtitle: "Parlament, Presidència de la Generalitat, Govern i òrgans de control",
+    description: "Composició i funcions del Parlament de Catalunya, elecció i atribucions del President, el Consell Executiu, el Síndic de Greuges, la Sindicatura de Comptes i el Consell de Garanties Estatutàries.",
+    icon: '🏛️',
+    recommendedQuestions: 5,
+    subtopics: [
+      { id: 'b2_1', num: '1', title: "El Parlament de Catalunya", description: "Estatut dels diputats, funcions legislatives, pressupostàries i de control al Govern." },
+      { id: 'b2_2', num: '2', title: "El President i el Govern de la Generalitat", description: "Investidura, nomenament de consellers, potestat reglamentària i responsabilitat política." },
+      { id: 'b2_3', num: '3', title: "Òrgans estatutaris de garantia i control", description: "Síndic de Greuges, Sindicatura de Comptes i Consell de Garanties Estatutàries." }
+    ]
+  },
+  {
+    id: 'tema_b3',
+    ambit: 'Àmbit B',
+    ambitName: 'Institucional',
+    code: 'Tema B.3',
+    title: 'L’ordenament jurídic de l’Estat',
+    subtitle: "Constitució espanyola de 1978, jerarquia normativa i fonts del Dret",
+    description: "Principis constitucionals, procediments de reforma constitucional, lleis orgàniques, lleis ordinàries, decrets llei, decrets legislatius, reglaments i el principi de legalitat.",
+    icon: '📜',
+    recommendedQuestions: 5,
+    subtopics: [
+      { id: 'b3_1', num: '1', title: "La Constitució de 1978 i principis estructurals", description: "Estat social i democràtic de Dret, sobirania nacional i monarquia parlamentària." },
+      { id: 'b3_2', num: '2', title: "Les fonts del Dret i jerarquia normativa", description: "Llei orgànica, ordinària, decret llei, decret legislatiu i reglaments administratius." }
+    ]
+  },
+  {
+    id: 'tema_b4',
+    ambit: 'Àmbit B',
+    ambitName: 'Institucional',
+    code: 'Tema B.4',
+    title: 'Els drets humans i els drets constitucionals',
+    subtitle: "Declaració Universal, Títol I de la CE, garanties i suspensió de drets",
+    description: "Drets fonamentals i llibertats públiques (arts. 14 a 29 CE), procediment preferent i sumari, recurs d'empara davant el TC, Defensor del Poble i estats d'alarma, excepció i setge.",
+    icon: '🕊️',
+    recommendedQuestions: 5,
+    subtopics: [
+      { id: 'b4_1', num: '1', title: "Drets fonamentals i llibertats públiques", description: "Arts. 14 a 29 CE: dret a la vida, llibertat personal, intimitat, expressió i reunió." },
+      { id: 'b4_2', num: '2', title: "Garanties i suspensió de drets", description: "Recurs d'empara, Habeas Corpus, tutela judicial efectiva i estats excepcionals (art. 55 CE)." }
+    ]
+  },
+  {
+    id: 'tema_b5',
+    ambit: 'Àmbit B',
+    ambitName: 'Institucional',
+    code: 'Tema B.5',
+    title: 'Les institucions polítiques de l’Estat',
+    subtitle: "Corona, Corts Generals, Govern de l'Estat i relacions entre poders",
+    description: "La Corona com a cap d'Estat, Congrés dels Diputats i Senat, composició i funcions del Govern central, moció de censura i qüestió de confiança.",
+    icon: '👑',
+    recommendedQuestions: 5,
+    subtopics: [
+      { id: 'b5_1', num: '1', title: "La Corona i les Corts Generals", description: "Funcions del Rei, bicameralisme, elaboració de lleis i control al Govern." },
+      { id: 'b5_2', num: '2', title: "El Govern de l'Estat i l'Administració central", description: "Presidència del Govern, Consell de Ministres i responsabilitat política." }
+    ]
+  },
+  {
+    id: 'tema_b6',
+    ambit: 'Àmbit B',
+    ambitName: 'Institucional',
+    code: 'Tema B.6',
+    title: 'Els òrgans jurisdiccionals',
+    subtitle: "Poder judicial, Tribunal Constitucional, CGPJ i Ministeri Fiscal",
+    description: "Independència judicial, Consell General del Poder Judicial, Tribunal Suprem, Tribunal Constitucional, Tribunal Superior de Justícia de Catalunya (TSJC) i Ministeri Fiscal.",
+    icon: '⚖️',
+    recommendedQuestions: 5,
+    subtopics: [
+      { id: 'b6_1', num: '1', title: "El Poder Judicial i el CGPJ", description: "Jutjats i tribunals, unitat jurisdiccional, independència i estatut dels jutges." },
+      { id: 'b6_2', num: '2', title: "Tribunal Constitucional, TSJC i Ministeri Fiscal", description: "Control de constitucionalitat, TSJC a Catalunya i principis del Ministeri Fiscal." }
+    ]
+  },
+  {
+    id: 'tema_b7',
+    ambit: 'Àmbit B',
+    ambitName: 'Institucional',
+    code: 'Tema B.7',
+    title: 'L’organització territorial de l’Estat',
+    subtitle: "Principi d'autonomia, comunitats autònomes, províncies i municipis",
+    description: "L'Estat de les autonomies (art. 2 i Títol VIII CE), distribució de competències entre Estat i CCAA, províncies, diputacions i règim municipal (Llei 7/1985).",
+    icon: '🏙️',
+    recommendedQuestions: 5,
+    subtopics: [
+      { id: 'b7_1', num: '1', title: "L'Estat autonòmic i competències", description: "Principis de solidaritat, igualtat territorial i vies d'accés a l'autonomia (arts. 143 i 151 CE)." },
+      { id: 'b7_2', num: '2', title: "Administració local i règim municipal", description: "Municipi, ajuntament, alcalde, ple municipal i competències locals de seguretat." }
+    ]
+  },
+  {
+    id: 'tema_b8',
+    ambit: 'Àmbit B',
+    ambitName: 'Institucional',
+    code: 'Tema B.8',
+    title: 'La Unió Europea',
+    subtitle: "Institucions comunitàries, Dret europeu, tractats i cooperació policial",
+    description: "Parlament Europeu, Consell Europeu, Consell de la UE, Comissió Europea, TJUE, tractats de Roma a Lisboa, directives i reglaments, i l'Espai Schengen.",
+    icon: '🇪🇺',
+    recommendedQuestions: 5,
+    subtopics: [
+      { id: 'b8_1', num: '1', title: "Institucions de la Unió Europea", description: "Comissió, Parlament Europeu, Consell i Tribunal de Justícia de la UE." },
+      { id: 'b8_2', num: '2', title: "Fonts del Dret de la UE i Espai Schengen", description: "Reglaments, directives, decisions, efecte directe, primacia i tractat de Schengen." }
+    ]
+  },
 
-  // --- TEMA C.1: LES COMPETÈNCIES DE LA GENERALITAT EN MATÈRIA DE SEGURETAT ---
+  // =========================================================================
+  // ÀMBIT C: SEGURETAT CIUTADANA I ORDRE PÚBLIC (5 TEMES)
+  // =========================================================================
   {
     id: 'tema_c1',
     ambit: 'Àmbit C',
@@ -106,8 +311,70 @@ export const CAMI_TOPICS_LIST: CamiTopicInfo[] = [
       { id: 'c1_2_5', num: '2.5', title: "Matèria de trànsit, circulació de vehicles i seguretat viària", description: "RD 158/1997 de traspàs de trànsit, Servei Català de Trànsit (SCT) i Divisió de Trànsit de la PG-ME." }
     ]
   },
+  {
+    id: 'tema_c2',
+    ambit: 'Àmbit C',
+    ambitName: 'Seguretat Ciutadana i Ordre Públic',
+    code: 'Tema C.2',
+    title: 'El Departament d’Interior i Seguretat Pública',
+    subtitle: "Estructura orgànica, Direcció General de la Policia i òrgans centrals",
+    description: "Estructura del Departament, conseller/a, secretari/ària general, DGP, ISPC, SCT, CECAT, Direcció General de Protecció Civil i Direcció General d'Extinció d'Incendis.",
+    icon: '🏢',
+    recommendedQuestions: 5,
+    subtopics: [
+      { id: 'c2_1', num: '1', title: "Estructura orgànica del Departament", description: "Competències del titular del Departament, Secretaria General i direccions generals." },
+      { id: 'c2_2', num: '2', title: "La Direcció General de la Policia (DGP)", description: "Estructura de la DGP, prefectura policial, comissaries superiors i serveis de suport." }
+    ]
+  },
+  {
+    id: 'tema_c3',
+    ambit: 'Àmbit C',
+    ambitName: 'Seguretat Ciutadana i Ordre Públic',
+    code: 'Tema C.3',
+    title: 'La coordinació policial',
+    subtitle: "Llei 4/2003, Comissió de Policia de Catalunya i cooperació institucional",
+    description: "Sistema de seguretat pública de Catalunya, coordinació entre Mossos d'Esquadra i Policies Locals, juntes locals de seguretat, convenis de col·laboració i cooperació amb FCSE.",
+    icon: '🤝',
+    recommendedQuestions: 5,
+    subtopics: [
+      { id: 'c3_1', num: '1', title: "La Llei 4/2003 i el sistema de seguretat pública", description: "Principis de complementarietat, informació mútua i canals de coordinació policial." },
+      { id: 'c3_2', num: '2', title: "Juntes Locals de Seguretat i Comissió de Policia", description: "Composició de les juntes locals, coordinació operativa i plans locals de seguretat." }
+    ]
+  },
+  {
+    id: 'tema_c4',
+    ambit: 'Àmbit C',
+    ambitName: 'Seguretat Ciutadana i Ordre Públic',
+    code: 'Tema C.4',
+    title: 'El marc legal de la seguretat',
+    subtitle: "Llei orgànica 2/1986 de FCS i Llei 10/1994 de la Policia de la Generalitat",
+    description: "Principis bàsics d'actuació policial (art. 5 LOFCS), naturalesa i funcions del cos de Mossos d'Esquadra, jerarquia, deure d'intervenció permanent i règim estatutari.",
+    icon: '📕',
+    recommendedQuestions: 5,
+    subtopics: [
+      { id: 'c4_1', num: '1', title: "La Llei orgànica 2/1986 de forces i cossos de seguretat", description: "Principis bàsics d'actuació, adequació, proporcionalitat i relacions amb la ciutadania." },
+      { id: 'c4_2', num: '2', title: "La Llei 10/1994 de la Policia de la Generalitat", description: "Estatut del personal, escales i categories, drets, deures i potestats dels membres de la PG-ME." }
+    ]
+  },
+  {
+    id: 'tema_c5',
+    ambit: 'Àmbit C',
+    ambitName: 'Seguretat Ciutadana i Ordre Públic',
+    code: 'Tema C.5',
+    title: 'El Codi deontològic policial',
+    subtitle: "Ètica policial, Declaració del Consell d'Europa i règim disciplinari",
+    description: "Declaració sobre la Policia (Resolució 690 del Consell d'Europa), Codi Europeu d'Ètica Policial, ús de la força i armes de foc, secret professional i règim disciplinari (faltes i sancions).",
+    icon: '🎖️',
+    recommendedQuestions: 5,
+    subtopics: [
+      { id: 'c5_1', num: '1', title: "Ètica policial i tractament de ciutadans i detinguts", description: "Resolució 690 del Consell d'Europa, respecte a la dignitat humana i prevenció de maltractaments." },
+      { id: 'c5_2', num: '2', title: "Règim disciplinari dels Mossos d'Esquadra", description: "Faltes molt greus, greus i lleus segons la Llei 10/1994, prescripcions i procediment sancionador." }
+    ]
+  },
 
-  // --- ÀMBIT D: UN ÚNIC ---
+  // =========================================================================
+  // ÀMBIT D: ACTUALITAT I CULTURA GENERAL (TEMA ÚNIC)
+  // =========================================================================
   {
     id: 'tema_d1',
     ambit: 'Àmbit D',
@@ -126,7 +393,7 @@ export const CAMI_TOPICS_LIST: CamiTopicInfo[] = [
 
 /**
  * SISTEMA DE DEGRADACIÓ DE DOMINI PER PAS DEL TEMPS (CURVA DE L'OBLIT D'EBBINGHAUS)
- * Si l'opositor fa dies que no repassa un tema, el domini baixa gradualment.
+ * Si l'opositor fa dies que no repassa un tema o subtema, el domini baixa gradualment.
  */
 export function calculateTopicMasteryWithDecay(record?: TopicMasteryRecord): {
   currentMastery: number;
@@ -152,7 +419,7 @@ export function calculateTopicMasteryWithDecay(record?: TopicMasteryRecord): {
   }
 
   const originalMastery = Math.min(100, Math.max(0, record.mastery));
-  const lastTime = record.lastPlayedAt || Date.now();
+  const lastTime = record.lastPlayedAt || (record as any).lastActivityTimestamp || Date.now();
   const elapsedMs = Math.max(0, Date.now() - lastTime);
   const daysInactive = Math.floor(elapsedMs / (1000 * 60 * 60 * 24));
 
@@ -201,7 +468,7 @@ export function calculateTopicMasteryWithDecay(record?: TopicMasteryRecord): {
 }
 
 /**
- * Càlcul del Progrés de Cobertura Global del Temari (%)
+ * Càlcul del Progrés de Cobertura Global del Temari (%) tenint en compte temes i subnodes
  */
 export function calculateGlobalSyllabusCoverage(topicMasteryMap: Record<string, TopicMasteryRecord> = {}): {
   overallPercentage: number;
@@ -221,8 +488,8 @@ export function calculateGlobalSyllabusCoverage(topicMasteryMap: Record<string, 
   let totalAlertCount = 0;
 
   CAMI_TOPICS_LIST.forEach(topic => {
-    const record = topicMasteryMap[topic.id];
-    const { currentMastery, tier, isCriticalAlert } = calculateTopicMasteryWithDecay(record);
+    const directRecord = topicMasteryMap[topic.id];
+    const { currentMastery, tier, isCriticalAlert } = calculateTopicMasteryWithDecay(directRecord);
     
     totalSum += currentMastery;
     ambitStats[topic.ambit].totalTopics += 1;

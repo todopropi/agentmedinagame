@@ -1051,6 +1051,154 @@ export async function uploadSupabaseImage(
 }
 
 /**
+ * Pujada de documents d'estudi i apunts a Supabase Storage
+ * Prioritza el bucket protegit 'study-materials'. Si hi ha incidència d'RLS o accés,
+ * utilitza 'app-media' com a recolzament perquè l'administrador no quedi mai bloquejat.
+ */
+export async function uploadSupabaseStudyDocument(
+  file: File,
+  titlePrefix = 'document'
+): Promise<{
+  storagePath: string;
+  fileName: string;
+  sizeText: string;
+  format: 'pdf' | 'docx' | 'pptx' | 'txt' | 'link';
+  bucketName: 'study-materials' | 'app-media';
+  publicUrl?: string;
+} | null> {
+  try {
+    const rawExtension = file.name.split('.').pop()?.toLowerCase() || 'pdf';
+    let format: 'pdf' | 'docx' | 'pptx' | 'txt' | 'link' = 'pdf';
+    if (['doc', 'docx'].includes(rawExtension)) format = 'docx';
+    else if (['ppt', 'pptx'].includes(rawExtension)) format = 'pptx';
+    else if (rawExtension === 'txt') format = 'txt';
+    else format = 'pdf';
+
+    const cleanTitle = (titlePrefix || file.name)
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9_-]/g, '_')
+      .slice(0, 45);
+
+    const sizeInMB = file.size / (1024 * 1024);
+    const sizeText = sizeInMB >= 1 
+      ? `${sizeInMB.toFixed(1)} MB` 
+      : `${Math.round(file.size / 1024)} KB`;
+
+    // 1. Intentar pujar al bucket protegit 'study-materials'
+    const targetPath = `documents/${cleanTitle}_${Date.now()}.${rawExtension}`;
+    let uploadRes = await supabase.storage
+      .from('study-materials')
+      .upload(targetPath, file, {
+        cacheControl: '3600',
+        upsert: true,
+        contentType: file.type || 'application/pdf'
+      });
+
+    if (!uploadRes.error) {
+      return {
+        storagePath: targetPath,
+        fileName: file.name,
+        sizeText,
+        format,
+        bucketName: 'study-materials'
+      };
+    }
+
+    console.info('Avís amb study-materials (RLS/permís), provant a app-media:', uploadRes.error.message);
+
+    // 2. Fallback immediat a 'app-media' per no aturar la càrrega
+    const fallbackPath = `study_docs/${cleanTitle}_${Date.now()}.${rawExtension}`;
+    const fallbackRes = await supabase.storage
+      .from('app-media')
+      .upload(fallbackPath, file, {
+        cacheControl: '3600',
+        upsert: true,
+        contentType: file.type || 'application/pdf'
+      });
+
+    if (fallbackRes.error) {
+      console.error('Error pujant document també a app-media:', fallbackRes.error);
+      return null;
+    }
+
+    const { data: pubData } = supabase.storage.from('app-media').getPublicUrl(fallbackPath);
+
+    return {
+      storagePath: fallbackPath,
+      fileName: file.name,
+      sizeText,
+      format,
+      bucketName: 'app-media',
+      publicUrl: pubData?.publicUrl
+    };
+  } catch (err) {
+    console.error('Excepció a uploadSupabaseStudyDocument:', err);
+    return null;
+  }
+}
+
+/**
+ * Genera un enllaç signat temporal (URL de descàrrega segura amb caducitat)
+ * Per defecte caduca en 120 segons (2 minuts) per evitar que es comparteixi l'enllaç
+ */
+export async function getSignedStudyMaterialUrl(
+  storagePathOrUrl: string,
+  preferredBucket: string = 'study-materials',
+  expiresInSeconds: number = 120
+): Promise<string | null> {
+  try {
+    if (!storagePathOrUrl) return null;
+
+    // Si és una URL externa que no és de Supabase Storage (ex: Google Drive, Dropbox)
+    if (storagePathOrUrl.startsWith('http') && !storagePathOrUrl.includes('.supabase.co/storage/')) {
+      return storagePathOrUrl;
+    }
+
+    // Detectar bucket i netejar el path
+    let bucket = preferredBucket || 'study-materials';
+    let cleanPath = storagePathOrUrl;
+
+    if (storagePathOrUrl.includes('/storage/v1/object/public/')) {
+      const parts = storagePathOrUrl.split('/storage/v1/object/public/')[1]?.split('/');
+      if (parts && parts.length > 1) {
+        bucket = parts[0];
+        cleanPath = parts.slice(1).join('/');
+      }
+    } else if (storagePathOrUrl.includes('/storage/v1/object/sign/')) {
+      const parts = storagePathOrUrl.split('/storage/v1/object/sign/')[1]?.split('/');
+      if (parts && parts.length > 1) {
+        bucket = parts[0];
+        cleanPath = parts.slice(1).join('/').split('?')[0];
+      }
+    } else if (cleanPath.startsWith('study_docs/')) {
+      bucket = 'app-media';
+    } else if (cleanPath.startsWith('documents/')) {
+      bucket = preferredBucket || 'study-materials';
+    }
+
+    cleanPath = cleanPath.split('?')[0];
+
+    // Intentar generar URL signada amb caducitat
+    const { data, error } = await supabase.storage
+      .from(bucket)
+      .createSignedUrl(cleanPath, expiresInSeconds);
+
+    if (!error && data?.signedUrl) {
+      return data.signedUrl;
+    }
+
+    // Si el bucket té fallback públic
+    const { data: pubData } = supabase.storage.from(bucket).getPublicUrl(cleanPath);
+    return pubData?.publicUrl || storagePathOrUrl;
+  } catch (err) {
+    console.warn('Excepció generant URL signada temporal:', err);
+    return storagePathOrUrl;
+  }
+}
+
+/**
  * G) LISTA DE RETOS:
  * SELECT de nombres y perfiles en 'profiles' para retar opositores
  */

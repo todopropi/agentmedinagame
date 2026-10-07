@@ -7,8 +7,11 @@ import {
   calculateTopicMasteryWithDecay, 
   calculateGlobalSyllabusCoverage 
 } from '../data/camiTopics';
-import { QUESTIONS_BANK } from '../data/questionsBank';
-import { CAMI_REAL_QUESTIONS } from '../data/camiRealQuestions';
+import { 
+  QUESTIONS_BANK, 
+  getQuestionsForTopicOrSubtopic, 
+  getQuestionCountForTopicOrSubtopic 
+} from '../data/questionsBank';
 import { AudioEngine } from '../utils/audio';
 import { TacticalChestModal, TacticalReward } from './TacticalChestModal';
 import confetti from 'canvas-confetti';
@@ -16,22 +19,17 @@ import {
   Compass, 
   Award, 
   AlertTriangle, 
-  Sparkles, 
   CheckCircle2, 
   Clock, 
-  Flame, 
-  Zap, 
-  ChevronRight, 
-  Check, 
   X, 
-  HelpCircle, 
-  RefreshCw,
-  Play,
-  RotateCcw,
-  BookOpen,
-  ArrowRight,
-  ShieldAlert,
-  Coins
+  Play, 
+  BookOpen, 
+  ArrowRight, 
+  ShieldAlert, 
+  Coins,
+  Eye,
+  EyeOff,
+  Check
 } from 'lucide-react';
 
 interface ModeCamiISPCProps {
@@ -56,9 +54,37 @@ export const ModeCamiISPC: React.FC<ModeCamiISPCProps> = ({
 }) => {
   const [selectedAmbitFilter, setSelectedAmbitFilter] = useState<'all' | 'Àmbit A' | 'Àmbit B' | 'Àmbit C' | 'Àmbit D'>('all');
   const [activeMissionTopic, setActiveMissionTopic] = useState<CamiTopicInfo | null>(null);
-  const [activeSubtopicId, setActiveSubtopicId] = useState<string | null>(null);
-  const [expandedTopicId, setExpandedTopicId] = useState<string | null>(null);
   const [isDailyExpressActive, setIsDailyExpressActive] = useState<boolean>(false);
+
+  // Autorització d'administrador per visualitzar el recompte de preguntes
+  const isAdmin = Boolean(
+    user.role === 'admin' || 
+    user.email?.toLowerCase().trim() === 'opossscar@gmail.com' || 
+    (user as any).isAdmin
+  );
+
+  const [adminAuthShowQuestionsCount, setAdminAuthShowQuestionsCount] = useState<boolean>(() => {
+    try {
+      const stored = localStorage.getItem('agent_medina_admin_show_q_count');
+      if (stored !== null) return stored === 'true';
+      return false;
+    } catch {
+      return false;
+    }
+  });
+
+  const toggleAdminQuestionCountAuth = () => {
+    setAdminAuthShowQuestionsCount(prev => {
+      const next = !prev;
+      try {
+        localStorage.setItem('agent_medina_admin_show_q_count', String(next));
+      } catch {}
+      return next;
+    });
+  };
+
+  // Recompte de preguntes visible si l'usuari és admin o si l'admin ho ha autoritzat
+  const canShowQuestionCounts = isAdmin || adminAuthShowQuestionsCount;
   
   // Mission Runner States
   const [missionQuestions, setMissionQuestions] = useState<Question[]>([]);
@@ -83,31 +109,32 @@ export const ModeCamiISPC: React.FC<ModeCamiISPCProps> = ({
   const todayStr = new Date().toISOString().split('T')[0];
   const isDailyMissionCompletedToday = user.lastDailyMissionDate === todayStr;
 
-  // Llista filtrada de temes
+  // Llista filtrada de temes per Àmbit oficial
   const filteredTopics = useMemo(() => {
-    if (selectedAmbitFilter === 'all') return CAMI_TOPICS_LIST;
+    if (selectedAmbitFilter === 'all') {
+      return CAMI_TOPICS_LIST;
+    }
     return CAMI_TOPICS_LIST.filter(t => t.ambit === selectedAmbitFilter);
   }, [selectedAmbitFilter]);
 
-  // Iniciar Misió d'un Tema o Apartat
-  const handleStartTopicMission = (topic: CamiTopicInfo, subtopicId?: string) => {
+  // Iniciar Misió d'un Tema Oficial
+  const handleStartTopicMission = (topic: CamiTopicInfo) => {
     AudioEngine.playClick();
     setActiveMissionTopic(topic);
-    setActiveSubtopicId(subtopicId || null);
     setIsDailyExpressActive(false);
 
-    // Filtrar estrictament del temari oficial real
-    let candidates = CAMI_REAL_QUESTIONS.filter(q => {
-      if (subtopicId) {
-        return q.apartatId === subtopicId;
-      }
-      return q.temaId === topic.id;
-    });
+    // Consulta directa i estricta del banc oficial de preguntes (sense inventar res)
+    let candidates = getQuestionsForTopicOrSubtopic(topic.id);
 
+    // Fallback de seguretat
     if (candidates.length === 0) {
-      candidates = CAMI_REAL_QUESTIONS.filter(q => q.temaId === topic.id);
+      candidates = QUESTIONS_BANK.filter(q => q.ambit === topic.ambit);
+    }
+    if (candidates.length === 0) {
+      candidates = QUESTIONS_BANK;
     }
 
+    // Selecció de fins a 5 preguntes reals del tema
     const count = Math.min(candidates.length, 5);
     const shuffled = [...candidates].sort(() => 0.5 - Math.random()).slice(0, count);
 
@@ -124,12 +151,11 @@ export const ModeCamiISPC: React.FC<ModeCamiISPCProps> = ({
     AudioEngine.playClick();
     setIsDailyExpressActive(true);
     setActiveMissionTopic(null);
-    setActiveSubtopicId(null);
 
-    // Filtrar estrictament d'Àmbit D (Tema Únic)
-    let candidates = CAMI_REAL_QUESTIONS.filter(q => q.temaId === 'tema_d1' || q.ambit === 'Àmbit D');
+    // Filtrar estrictament d'Àmbit D (Tema Únic) de la base de dades
+    let candidates = getQuestionsForTopicOrSubtopic('tema_d1');
     if (candidates.length === 0) {
-      candidates = CAMI_REAL_QUESTIONS;
+      candidates = QUESTIONS_BANK.filter(q => q.ambit === 'Àmbit D' || q.ambit === 'Actualitat');
     }
 
     const shuffled = [...candidates].sort(() => 0.5 - Math.random()).slice(0, 5);
@@ -153,11 +179,9 @@ export const ModeCamiISPC: React.FC<ModeCamiISPCProps> = ({
     if (isCorrect) {
       AudioEngine.playCorrect();
       setMissionCorrectCount(prev => prev + 1);
-      // Atorgar XP i Mèrits
       onUpdateUserStats(20, 5, undefined, undefined, currentQ.id, true);
     } else {
       AudioEngine.playWrong();
-      // Guardar automàticament a preguntes fallades
       onUpdateUserStats(0, 0, currentQ.id, undefined, currentQ.id, false);
     }
   };
@@ -170,12 +194,11 @@ export const ModeCamiISPC: React.FC<ModeCamiISPCProps> = ({
       setSelectedOption(null);
       setIsAnswerSubmitted(false);
     } else {
-      // Final de la Missió!
       handleCompleteMission();
     }
   };
 
-  // Finalitzar Missió i Calcular Nou Domini
+  // Finalitzar Missió i Calcular Nou Domini del Tema
   const handleCompleteMission = () => {
     const totalQ = missionQuestions.length;
     const finalScore = missionCorrectCount;
@@ -192,30 +215,23 @@ export const ModeCamiISPC: React.FC<ModeCamiISPCProps> = ({
         origin: { y: 0.6 }
       });
       onUpdateUserStats(100, 50);
-      // Guardar data de missió completada
       user.lastDailyMissionDate = todayStr;
+      onUpdateTopicMastery('tema_d1', scorePct, finalScore, totalQ);
     } else if (activeMissionTopic) {
-      const topicId = activeMissionTopic.id;
+      const topic = activeMissionTopic;
+      const topicId = topic.id;
       const prevRecord = topicMasteryMap[topicId];
       const prevMastery = prevRecord ? prevRecord.mastery : 0;
-
-      // Càlcul de nou mestratge ponderat
       const newMastery = Math.min(100, Math.max(prevMastery, scorePct));
 
       onUpdateTopicMastery(topicId, newMastery, finalScore, totalQ);
 
-      // Si ha assolit Or (>= 80%) i abans no el tenia, o ha fet 100% de la missió
       if (scorePct >= 80) {
         AudioEngine.playGoldRank();
-        confetti({
-          particleCount: 90,
-          spread: 80,
-          origin: { y: 0.6 }
-        });
-
+        confetti({ particleCount: 90, spread: 80, origin: { y: 0.6 } });
         if (newMastery >= 80 && prevMastery < 80) {
           setTimeout(() => {
-            setChestSource(`Tema ${activeMissionTopic.code} ascendit al Nivell Or!`);
+            setChestSource(`Tema ${topic.code} ascendit al Nivell Or!`);
             setShowChestModal(true);
           }, 800);
         }
@@ -249,7 +265,7 @@ export const ModeCamiISPC: React.FC<ModeCamiISPCProps> = ({
               {isDailyExpressActive ? '⚡' : activeMissionTopic?.icon || '🎯'}
             </div>
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
                   {isDailyExpressActive ? 'Missió Exprés Diària' : activeMissionTopic?.code}
                 </span>
@@ -257,12 +273,10 @@ export const ModeCamiISPC: React.FC<ModeCamiISPCProps> = ({
                   Pregunta {currentQuestionIndex + 1} de {totalQ}
                 </span>
               </div>
-              <h2 className="text-base sm:text-lg font-black text-white leading-tight mt-0.5">
+              <h2 className="text-base sm:text-lg font-black text-white leading-tight mt-1">
                 {isDailyExpressActive 
                   ? 'Àmbit D · Desafiament d’Actualitat & Cultura' 
-                  : currentQ.apartat 
-                    ? `${activeMissionTopic?.code} · ${currentQ.apartat}` 
-                    : activeMissionTopic?.title}
+                  : activeMissionTopic?.title}
               </h2>
             </div>
           </div>
@@ -271,7 +285,6 @@ export const ModeCamiISPC: React.FC<ModeCamiISPCProps> = ({
             onClick={() => {
               setActiveMissionTopic(null);
               setIsDailyExpressActive(false);
-              setActiveSubtopicId(null);
             }}
             className="p-2 text-slate-400 hover:text-white rounded-xl bg-slate-800/80 transition-colors cursor-pointer shrink-0"
             title="Sortir de la missió"
@@ -283,12 +296,12 @@ export const ModeCamiISPC: React.FC<ModeCamiISPCProps> = ({
         {/* Cos de la pregunta o Pantalla de Resultats */}
         {!missionFinished && currentQ ? (
           <div className="bg-slate-900/70 border border-slate-800/90 rounded-3xl p-5 sm:p-7 shadow-2xl space-y-5">
-            {/* Pregunta */}
+            {/* Pregunta Oficial del Banc */}
             <div>
               <div className="flex items-center justify-between text-xs text-slate-400 mb-2">
                 <span className="text-sky-400 font-bold flex items-center gap-1.5">
                   <BookOpen className="w-3.5 h-3.5" />
-                  <span>{currentQ.apartat || currentQ.seccio || 'Oficial CME'}</span>
+                  <span>{currentQ.seccio || activeMissionTopic?.title || 'Oficial CME'}</span>
                 </span>
                 <span className="text-amber-400 font-bold">Encerts: {missionCorrectCount}/{currentQuestionIndex}</span>
               </div>
@@ -340,20 +353,36 @@ export const ModeCamiISPC: React.FC<ModeCamiISPCProps> = ({
               })}
             </div>
 
-            {/* Explicació si ja s'ha contestat */}
+            {/* Explicació DIRECTA de la base de dades (sense invencions) */}
             {isAnswerSubmitted && (
-              <div className="p-4 rounded-2xl bg-slate-950/80 border border-slate-800 space-y-1.5 animate-fadeIn">
-                <div className="flex items-center gap-1.5 text-xs font-bold text-amber-400">
-                  <BookOpen className="w-4 h-4" />
-                  <span>Raonament Jurídic / Oficial:</span>
+              <div className="p-4 sm:p-5 rounded-2xl bg-slate-950/90 border border-slate-800 space-y-2 animate-fadeIn">
+                <div className="flex items-center justify-between gap-2 flex-wrap text-xs font-bold text-amber-400">
+                  <div className="flex items-center gap-1.5">
+                    <BookOpen className="w-4 h-4" />
+                    <span>Justificació Oficial del Banc de Dades:</span>
+                  </div>
+                  {currentQ.guiaPagina && (
+                    <span className="text-[10px] text-sky-300 bg-sky-950/70 border border-sky-800/80 px-2 py-0.5 rounded-full font-medium">
+                      {currentQ.guiaPagina}
+                    </span>
+                  )}
                 </div>
-                <p className="text-xs text-slate-300 leading-relaxed">
+
+                <p className="text-xs sm:text-sm text-slate-200 leading-relaxed font-medium whitespace-pre-line">
                   {currentQ.explicacio || currentQ.explanation || "D'acord amb la Guia d'Estudi oficial del Cos de Mossos d'Esquadra."}
                 </p>
+
+                {currentQ.clauTribunal && (
+                  <div className="pt-1.5 border-t border-slate-800/80 text-[11px] text-emerald-300 flex items-center gap-1.5">
+                    <span className="font-bold">🔑 Criteri Tribunal:</span>
+                    <span>{currentQ.clauTribunal}</span>
+                  </div>
+                )}
+
                 {selectedOption !== currentQ.resposta && (
-                  <div className="text-[11px] text-rose-400 font-semibold flex items-center gap-1 pt-1">
-                    <ShieldAlert className="w-3.5 h-3.5" />
-                    <span>Pregunta afegida automàticament al teu Sac de Fallades & Errors Pendents!</span>
+                  <div className="text-[11px] text-rose-400 font-semibold flex items-center gap-1 pt-1 border-t border-slate-800/80">
+                    <ShieldAlert className="w-3.5 h-3.5 shrink-0" />
+                    <span>Pregunta registrada al teu Sac de Fallades per a repàs de reforç.</span>
                   </div>
                 )}
               </div>
@@ -376,7 +405,7 @@ export const ModeCamiISPC: React.FC<ModeCamiISPCProps> = ({
                   onClick={handleNextQuestion}
                   className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-white font-black text-sm uppercase tracking-wider shadow-lg shadow-sky-500/20 transition-all cursor-pointer flex items-center justify-center gap-2"
                 >
-                  <span>{currentQuestionIndex + 1 < totalQ ? 'Següent Pregunta' : 'Veure Resultats de la Missió'}</span>
+                  <span>{currentQuestionIndex + 1 < totalQ ? 'Següent Pregunta' : 'Veure Resultats del Tema'}</span>
                   <ArrowRight className="w-4 h-4" />
                 </button>
               )}
@@ -408,7 +437,7 @@ export const ModeCamiISPC: React.FC<ModeCamiISPCProps> = ({
               <div className="p-3 bg-slate-950/70 border border-slate-800 rounded-2xl">
                 <div className="text-[10px] font-bold text-slate-400 uppercase">Efectivitat</div>
                 <div className="text-xl font-black text-sky-400 mt-0.5">
-                  {Math.round((missionCorrectCount / totalQ) * 100)}%
+                  {totalQ > 0 ? Math.round((missionCorrectCount / totalQ) * 100) : 0}%
                 </div>
               </div>
               <div className="p-3 bg-slate-950/70 border border-slate-800 rounded-2xl">
@@ -420,7 +449,7 @@ export const ModeCamiISPC: React.FC<ModeCamiISPCProps> = ({
             </div>
 
             <div className="p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-2xl max-w-md mx-auto text-xs text-emerald-300 font-medium">
-              ✨ La corba de degradació s'ha restaurat al 100% per a aquest tema!
+              ✨ El nivell de domini i la corba d'oblit s'han actualitzat correctament per a aquest tema!
             </div>
 
             <div className="pt-2 flex flex-col sm:flex-row gap-3 justify-center max-w-md mx-auto">
@@ -435,7 +464,7 @@ export const ModeCamiISPC: React.FC<ModeCamiISPCProps> = ({
                 }}
                 className="py-3 px-6 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs uppercase cursor-pointer transition-colors"
               >
-                Repetir Missió
+                Repetir Tema
               </button>
               <button
                 type="button"
@@ -454,7 +483,7 @@ export const ModeCamiISPC: React.FC<ModeCamiISPCProps> = ({
     );
   }
 
-  // PANTALLA PRINCIPAL: MAPA DE TEMAS "CAMÍ A L'ISPC"
+  // PANTALLA PRINCIPAL: MAPA DIRECTE DE TEMES OFICIALS
   return (
     <div className="max-w-7xl mx-auto px-3 sm:px-6 py-4 space-y-6">
       {/* HEADER AMB PROGRÉS DE COBERTURA DEL TEMARI */}
@@ -463,20 +492,36 @@ export const ModeCamiISPC: React.FC<ModeCamiISPCProps> = ({
 
         <div className="relative flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">
           <div className="space-y-2 max-w-xl">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <span className="px-3 py-1 rounded-full text-xs font-black bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center gap-1.5 uppercase tracking-wider">
                 <Compass className="w-3.5 h-3.5 text-amber-400" />
                 <span>Missions de Temari Oficial 2026</span>
               </span>
               <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-sky-500/15 text-sky-300 border border-sky-500/30">
-                4 Temes Oficials · 21 Apartats
+                {CAMI_TOPICS_LIST.length} Temes Oficials
               </span>
+              {isAdmin && (
+                <button
+                  type="button"
+                  onClick={toggleAdminQuestionCountAuth}
+                  className={`px-2.5 py-1 rounded-full text-[11px] font-bold border transition-all cursor-pointer flex items-center gap-1.5 ${
+                    adminAuthShowQuestionsCount
+                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 shadow-sm'
+                      : 'bg-slate-800/80 text-slate-300 border-slate-700 hover:text-white'
+                  }`}
+                  title="Configuració Admin: Controla si els opositors poden visualitzar el recompte de preguntes"
+                >
+                  {adminAuthShowQuestionsCount ? <Eye className="w-3.5 h-3.5 text-emerald-400" /> : <EyeOff className="w-3.5 h-3.5 text-slate-400" />}
+                  <span>{adminAuthShowQuestionsCount ? 'Recompte Preguntes: Autoritzat' : 'Recompte Preguntes: Només Admin'}</span>
+                </button>
+              )}
             </div>
+
             <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
-              CAMÍ A L'ISPC · MAPA DE TEMARI
+              CAMÍ A L'ISPC · MAPA DE TEMARI OFICIAL
             </h1>
             <p className="text-xs sm:text-sm text-slate-400 leading-relaxed">
-              Domina tots els temes dels 4 Àmbits oficials per a l'accés a l'Escala Bàsica dels Mossos d'Esquadra. El teu domini es degrada amb el temps si no repasses: mantén els teus temes al <strong className="text-amber-400">Nivell Or</strong>!
+              Tots els 21 temes oficials de la convocatòria connectats directament amb el teu banc de preguntes oficial. Entrena cada tema individualment, mantén el domini en <strong className="text-amber-400">Nivell Or</strong> i supera la corba d'oblit.
             </p>
           </div>
 
@@ -506,7 +551,7 @@ export const ModeCamiISPC: React.FC<ModeCamiISPCProps> = ({
               <div className="p-1.5 bg-slate-900/60 rounded-xl">
                 <div className="text-[10px] text-slate-400 font-semibold uppercase">Alertes Degradació</div>
                 <div className={`text-sm font-black mt-0.5 ${totalAlertCount > 0 ? 'text-red-400 animate-pulse' : 'text-slate-400'}`}>
-                  {totalAlertCount} temes
+                  {totalAlertCount} en risc
                 </div>
               </div>
             </div>
@@ -565,7 +610,7 @@ export const ModeCamiISPC: React.FC<ModeCamiISPCProps> = ({
         </button>
       </div>
 
-      {/* FILTRES PER ÀMBITS OFICIALS */}
+      {/* FILTRES PER ÀMBITS OFICIALS (Tots els temes, o estrictament Àmbit A, B, C, D) */}
       <div className="flex items-center gap-2 overflow-x-auto pretty-scrollbar pb-1">
         <button
           type="button"
@@ -582,6 +627,8 @@ export const ModeCamiISPC: React.FC<ModeCamiISPCProps> = ({
         {CAMI_AMBITS.map(amb => {
           const isSelected = selectedAmbitFilter === amb.id;
           const stat = ambitStats[amb.id];
+          const topicsCount = CAMI_TOPICS_LIST.filter(t => t.ambit === amb.id).length;
+
           return (
             <button
               key={amb.id}
@@ -594,7 +641,7 @@ export const ModeCamiISPC: React.FC<ModeCamiISPCProps> = ({
               }`}
             >
               <span>{amb.icon}</span>
-              <span>{amb.id}</span>
+              <span>{amb.id} ({topicsCount})</span>
               <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-slate-950 text-amber-400 font-black">
                 {stat.averageMastery}%
               </span>
@@ -603,10 +650,10 @@ export const ModeCamiISPC: React.FC<ModeCamiISPCProps> = ({
         })}
       </div>
 
-      {/* GRAELLA DE TEMES AMB DEGRADACIÓ TEMPORAL */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      {/* TARGETES NETES I DIRECTES DELS 21 TEMES OFICIALS */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
         {filteredTopics.map(topic => {
-          const record = topicMasteryMap[topic.id];
+          const topicRecord = topicMasteryMap[topic.id];
           const { 
             currentMastery, 
             originalMastery, 
@@ -616,9 +663,11 @@ export const ModeCamiISPC: React.FC<ModeCamiISPCProps> = ({
             tier, 
             statusText,
             daysInactive 
-          } = calculateTopicMasteryWithDecay(record);
+          } = calculateTopicMasteryWithDecay(topicRecord);
 
-          // Format de card segons el nivell i estat
+          const totalQuestionsInTopic = canShowQuestionCounts ? getQuestionCountForTopicOrSubtopic(topic.id) : 0;
+
+          // Estils de card segons el rang
           let cardBorder = "border-slate-800/80 hover:border-slate-700";
           let badgeBg = "bg-slate-800 text-slate-400";
 
@@ -641,8 +690,8 @@ export const ModeCamiISPC: React.FC<ModeCamiISPCProps> = ({
               key={topic.id}
               className={`relative bg-slate-900/90 border rounded-3xl p-5 flex flex-col justify-between transition-all hover:scale-[1.01] ${cardBorder}`}
             >
-              {/* Badge d'Àmbit & Estat de Risc */}
-              <div className="space-y-3">
+              <div className="space-y-3.5">
+                {/* Capçalera del tema */}
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-1.5">
                     <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">
@@ -653,14 +702,13 @@ export const ModeCamiISPC: React.FC<ModeCamiISPCProps> = ({
                     </span>
                   </div>
 
-                  {/* Nivell o Alerta */}
                   <div className={`text-[10px] font-black px-2 py-0.5 rounded-full uppercase flex items-center gap-1 ${badgeBg}`}>
                     {isCriticalAlert && <AlertTriangle className="w-3 h-3 text-red-400" />}
                     <span>{statusText}</span>
                   </div>
                 </div>
 
-                {/* Títol del Tema */}
+                {/* Títol i descripció del tema */}
                 <div>
                   <div className="flex items-center gap-2 mb-1">
                     <span className="text-xl">{topic.icon}</span>
@@ -673,10 +721,18 @@ export const ModeCamiISPC: React.FC<ModeCamiISPCProps> = ({
                   </p>
                 </div>
 
-                {/* BARRA DE DOMINI I AVÍS DE DEGRADACIÓ */}
-                <div className="space-y-1.5 pt-2">
+                {/* BARRA DE DOMINI DEL TEMA */}
+                <div className="space-y-1.5 pt-1">
                   <div className="flex items-center justify-between text-xs">
-                    <span className="font-bold text-slate-300">Domini del Tema:</span>
+                    <div className="flex items-center gap-1.5 font-bold text-slate-300">
+                      <span>Domini del Tema:</span>
+                      {canShowQuestionCounts && totalQuestionsInTopic > 0 && (
+                        <span className="text-[11px] font-bold text-sky-400 bg-sky-950/60 px-1.5 py-0.2 rounded border border-sky-800/60">
+                          📚 {totalQuestionsInTopic} preguntes
+                        </span>
+                      )}
+                    </div>
+
                     <div className="flex items-center gap-1 font-black">
                       <span className={isCriticalAlert ? 'text-red-400' : 'text-amber-400'}>
                         {currentMastery}%
@@ -706,66 +762,17 @@ export const ModeCamiISPC: React.FC<ModeCamiISPCProps> = ({
                     />
                   </div>
 
-                  {/* Notificació de la Curva de l'Oblit */}
                   {isDegraded && (
                     <div className="text-[10px] text-red-400/90 font-medium flex items-center gap-1 pt-0.5">
                       <Clock className="w-3 h-3 shrink-0" />
-                      <span>{daysInactive} dies sense repàs (-{decayAmount}% pèrdua)</span>
+                      <span>{daysInactive} dies sense repassar (-{decayAmount}% pèrdua)</span>
                     </div>
                   )}
                 </div>
-
-                {/* Acordió d'Apartats Oficials */}
-                {topic.subtopics && topic.subtopics.length > 0 && (
-                  <div className="pt-2">
-                    <button
-                      type="button"
-                      onClick={() => setExpandedTopicId(expandedTopicId === topic.id ? null : topic.id)}
-                      className="w-full flex items-center justify-between text-xs font-bold text-slate-300 hover:text-white py-1.5 px-3 rounded-xl bg-slate-950/70 border border-slate-800/80 transition-colors cursor-pointer"
-                    >
-                      <span className="flex items-center gap-1.5 text-[11px]">
-                        <BookOpen className="w-3.5 h-3.5 text-amber-400" />
-                        <span>{topic.subtopics.length} Apartats Oficials</span>
-                      </span>
-                      <ChevronRight className={`w-3.5 h-3.5 text-slate-400 transition-transform ${expandedTopicId === topic.id ? 'rotate-90 text-amber-400' : ''}`} />
-                    </button>
-
-                    {expandedTopicId === topic.id && (
-                      <div className="mt-2 space-y-1.5 max-h-52 overflow-y-auto pretty-scrollbar pr-1 animate-fadeIn">
-                        {topic.subtopics.map(sub => (
-                          <div 
-                            key={sub.id}
-                            className="p-2 rounded-xl bg-slate-950/80 border border-slate-800 flex items-center justify-between gap-2 hover:border-amber-500/40 transition-colors"
-                          >
-                            <div className="min-w-0 flex-1">
-                              <div className="text-[11px] font-bold text-slate-200 truncate">
-                                {sub.num}. {sub.title}
-                              </div>
-                              {sub.description && (
-                                <div className="text-[10px] text-slate-400 line-clamp-1">
-                                  {sub.description}
-                                </div>
-                              )}
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => handleStartTopicMission(topic, sub.id)}
-                              className="px-2 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-[10px] font-black shrink-0 flex items-center gap-1 border border-amber-500/30 cursor-pointer active:scale-95 transition-all"
-                              title={`Entrenar l'apartat ${sub.num}`}
-                            >
-                              <Play className="w-2.5 h-2.5 fill-current" />
-                              <span>Entrenar</span>
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
               </div>
 
-              {/* Botó de jugar Missió per a aquest tema */}
-              <div className="pt-4 mt-2 border-t border-slate-800/80">
+              {/* Botó per entrenar el tema oficial complet */}
+              <div className="pt-4 mt-3 border-t border-slate-800/80">
                 <button
                   type="button"
                   onClick={() => handleStartTopicMission(topic)}
@@ -778,7 +785,9 @@ export const ModeCamiISPC: React.FC<ModeCamiISPCProps> = ({
                   }`}
                 >
                   <Play className="w-3.5 h-3.5 fill-current" />
-                  <span>{currentMastery === 0 ? 'Iniciar Missió' : isCriticalAlert ? 'Recuperar Domini Urgent' : 'Repassar Tema'}</span>
+                  <span>
+                    {currentMastery === 0 ? 'Iniciar Tema' : isCriticalAlert ? 'Recuperar Domini Urgent' : 'Repassar Tema'}
+                  </span>
                 </button>
               </div>
             </div>

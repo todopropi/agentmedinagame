@@ -8,6 +8,8 @@ import {
   deleteSupabaseStoreItem,
   fetchSupabaseStudyMaterials,
   syncSupabaseStudyMaterials,
+  uploadSupabaseStudyDocument,
+  getSignedStudyMaterialUrl,
   DEFAULT_STUDY_MATERIALS
 } from '../../supabase';
 import { ShieldRenderer } from './ShieldRenderer';
@@ -82,6 +84,8 @@ export const TiendaEscuts: React.FC<TiendaEscutsProps> = ({
   const [isMaterialModalOpen, setIsMaterialModalOpen] = useState(false);
   const [editingMaterial, setEditingMaterial] = useState<StudyMaterial | null>(null);
   const [isSavingMaterial, setIsSavingMaterial] = useState(false);
+  const [confirmDeleteMaterialId, setConfirmDeleteMaterialId] = useState<string | null>(null);
+  const [confirmDeleteShieldId, setConfirmDeleteShieldId] = useState<string | null>(null);
   const [materialFormData, setMaterialFormData] = useState<Partial<StudyMaterial>>({
     titol: '',
     descripcio: '',
@@ -357,19 +361,96 @@ export const TiendaEscuts: React.FC<TiendaEscutsProps> = ({
 
   // Delete a shield
   const handleDeleteShield = async (shieldId: string) => {
-    if (window.confirm('Vols eliminar aquest escut de la botiga?')) {
+    try {
       const updatedList = shieldsList.filter(s => s.id !== shieldId);
       setShieldsList(updatedList);
+      setConfirmDeleteShieldId(null);
       await saveCustomShields(updatedList);
       await deleteSupabaseStoreItem(shieldId);
+      AudioEngine.playClick();
+    } catch (err) {
+      console.error('Error eliminant escut:', err);
     }
   };
 
   // Restore defaults
   const handleResetToDefaults = async () => {
-    if (window.confirm('Vols restaurar el catàleg oficial d\'escuts per defecte a Supabase?')) {
-      setShieldsList(DEFAULT_SHIELDS_LIST);
-      await saveCustomShields(DEFAULT_SHIELDS_LIST);
+    setShieldsList(DEFAULT_SHIELDS_LIST);
+    await saveCustomShields(DEFAULT_SHIELDS_LIST);
+    AudioEngine.playCorrect();
+  };
+
+  const [downloadingMatId, setDownloadingMatId] = useState<string | null>(null);
+  const [isUploadingDoc, setIsUploadingDoc] = useState(false);
+  const [uploadFeedback, setUploadFeedback] = useState<string | null>(null);
+
+  // Obre o descarrega el document utilitzant un enllaç signat temporal (2 minuts)
+  const handleOpenPurchasedDocument = async (material: StudyMaterial) => {
+    if (!material.arxiuUrl && !material.storagePath) {
+      alert("Aquest document encara no té cap arxiu adjunt.");
+      return;
+    }
+
+    setDownloadingMatId(material.id);
+    try {
+      const target = material.storagePath || material.arxiuUrl;
+      const signedUrl = await getSignedStudyMaterialUrl(
+        target,
+        material.bucketName || 'study-materials',
+        120
+      );
+      if (signedUrl) {
+        window.open(signedUrl, '_blank', 'noopener,noreferrer');
+      } else if (material.arxiuUrl) {
+        window.open(material.arxiuUrl, '_blank', 'noopener,noreferrer');
+      }
+    } catch (err) {
+      console.warn("Error generant enllaç temporal segur:", err);
+      if (material.arxiuUrl) {
+        window.open(material.arxiuUrl, '_blank', 'noopener,noreferrer');
+      }
+    } finally {
+      setDownloadingMatId(null);
+    }
+  };
+
+  // Càrrega d'arxiu local (PDF/Word/PPT) a Supabase Storage protegit
+  const handleDocumentFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 35 * 1024 * 1024) {
+      alert("L'arxiu és massa gran. El límit recomanat és de 35MB.");
+      return;
+    }
+
+    setIsUploadingDoc(true);
+    setUploadFeedback("Pujant arxiu a Supabase Storage protegit...");
+    try {
+      const res = await uploadSupabaseStudyDocument(file, materialFormData.titol || file.name.split('.')[0]);
+      if (res) {
+        setMaterialFormData(prev => ({
+          ...prev,
+          titol: prev.titol || file.name.replace(/\.[^/.]+$/, ""),
+          format: res.format,
+          tamanyText: res.sizeText,
+          storagePath: res.storagePath,
+          fileName: res.fileName,
+          bucketName: res.bucketName,
+          arxiuUrl: res.publicUrl || res.storagePath
+        }));
+        setUploadFeedback(`Document "${file.name}" (${res.sizeText}) pujat amb èxit a Supabase!`);
+        AudioEngine.playCorrect();
+      } else {
+        alert("No s'ha pogut completar la pujada a Supabase. Revisa la connexió.");
+        setUploadFeedback(null);
+      }
+    } catch (err) {
+      console.error("Error al carregar document:", err);
+      alert("Error inesperat pujant el document a Supabase.");
+      setUploadFeedback(null);
+    } finally {
+      setIsUploadingDoc(false);
     }
   };
 
@@ -380,13 +461,14 @@ export const TiendaEscuts: React.FC<TiendaEscutsProps> = ({
       return;
     }
 
-    const isAlreadyBought = user.purchasedMaterialIds?.includes(material.id);
+    const isAlreadyBought = Boolean(
+      user.purchasedMaterialIds?.includes(material.id) ||
+      user.unlockedMaterialIds?.includes(material.id) ||
+      material.preuMerits === 0
+    );
+
     if (isAlreadyBought) {
-      if (material.arxiuUrl) {
-        window.open(material.arxiuUrl, '_blank', 'noopener,noreferrer');
-      } else {
-        alert("Enllaç no disponible de moment.");
-      }
+      handleOpenPurchasedDocument(material);
       return;
     }
 
@@ -402,6 +484,7 @@ export const TiendaEscuts: React.FC<TiendaEscutsProps> = ({
     } else {
       user.merits = Math.max(0, user.merits - material.preuMerits);
       user.purchasedMaterialIds = [...(user.purchasedMaterialIds || []), material.id];
+      user.unlockedMaterialIds = [...(user.unlockedMaterialIds || []), material.id];
     }
 
     confetti({
@@ -410,11 +493,9 @@ export const TiendaEscuts: React.FC<TiendaEscutsProps> = ({
       origin: { y: 0.7 }
     });
 
-    if (material.arxiuUrl) {
-      setTimeout(() => {
-        window.open(material.arxiuUrl, '_blank', 'noopener,noreferrer');
-      }, 400);
-    }
+    setTimeout(() => {
+      handleOpenPurchasedDocument(material);
+    }, 450);
   };
 
   // Compra d'Escut de Racha Diària
@@ -466,6 +547,9 @@ export const TiendaEscuts: React.FC<TiendaEscutsProps> = ({
         temaAssociat: materialFormData.temaAssociat || '',
         preuMerits: Number(materialFormData.preuMerits) || 0,
         arxiuUrl: materialFormData.arxiuUrl || '',
+        storagePath: materialFormData.storagePath || editingMaterial?.storagePath,
+        fileName: materialFormData.fileName || editingMaterial?.fileName,
+        bucketName: materialFormData.bucketName || editingMaterial?.bucketName || 'study-materials',
         estat: materialFormData.estat || 'actiu',
         tamanyText: materialFormData.tamanyText || 'Arxiu d’estudi',
         dataCreacio: editingMaterial?.dataCreacio || new Date().toISOString().split('T')[0],
@@ -483,6 +567,7 @@ export const TiendaEscuts: React.FC<TiendaEscutsProps> = ({
       await syncSupabaseStudyMaterials(updatedList);
       setIsMaterialModalOpen(false);
       setEditingMaterial(null);
+      setUploadFeedback(null);
       AudioEngine.playCorrect();
     } catch (err) {
       console.error(err);
@@ -494,11 +579,14 @@ export const TiendaEscuts: React.FC<TiendaEscutsProps> = ({
 
   // Eliminar material d'estudi (Admin / Docència)
   const handleDeleteMaterial = async (materialId: string) => {
-    if (window.confirm("Vols eliminar aquest material d'estudi del catàleg?")) {
+    try {
       const updatedList = studyMaterials.filter(m => m.id !== materialId);
       setStudyMaterials(updatedList);
+      setConfirmDeleteMaterialId(null);
       await syncSupabaseStudyMaterials(updatedList);
       AudioEngine.playClick();
+    } catch (err) {
+      console.error("Error eliminant material:", err);
     }
   };
 
@@ -512,9 +600,13 @@ export const TiendaEscuts: React.FC<TiendaEscutsProps> = ({
       temaAssociat: '',
       preuMerits: 25,
       arxiuUrl: '',
+      storagePath: '',
+      fileName: '',
+      bucketName: 'study-materials',
       estat: 'actiu',
-      tamanyText: '2.5 MB'
+      tamanyText: ''
     });
+    setUploadFeedback(null);
     setIsMaterialModalOpen(true);
   };
 
@@ -528,18 +620,57 @@ export const TiendaEscuts: React.FC<TiendaEscutsProps> = ({
       temaAssociat: mat.temaAssociat || '',
       preuMerits: mat.preuMerits,
       arxiuUrl: mat.arxiuUrl,
+      storagePath: mat.storagePath || '',
+      fileName: mat.fileName || '',
+      bucketName: mat.bucketName || 'study-materials',
       estat: mat.estat,
       tamanyText: mat.tamanyText || ''
     });
+    setUploadFeedback(null);
     setIsMaterialModalOpen(true);
   };
+
+  // Llista d'àmbits dinàmica (Opció B: només aquells que tenen com a mínim 1 document)
+  const availableAmbitsWithCount = React.useMemo(() => {
+    const ambitsOrder = ['Àmbit A', 'Àmbit B', 'Àmbit C', 'Àmbit D', 'Transversal', 'Tots'];
+    const map = new Map<string, number>();
+
+    studyMaterials.forEach(m => {
+      if (!isDocentOrAdmin && m.estat === 'ocult') return;
+      if (!m.ambit) return;
+      const count = map.get(m.ambit) || 0;
+      map.set(m.ambit, count + 1);
+    });
+
+    return Array.from(map.entries())
+      .filter(([_, count]) => count > 0)
+      .sort(([a], [b]) => {
+        const idxA = ambitsOrder.indexOf(a);
+        const idxB = ambitsOrder.indexOf(b);
+        if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+        if (idxA !== -1) return -1;
+        if (idxB !== -1) return 1;
+        return a.localeCompare(b);
+      });
+  }, [studyMaterials, isDocentOrAdmin]);
+
+  const comingSoonCount = React.useMemo(() => {
+    return studyMaterials.filter(m => (isDocentOrAdmin || m.estat !== 'ocult') && m.estat === 'proximament').length;
+  }, [studyMaterials, isDocentOrAdmin]);
+
+  const purchasedCount = React.useMemo(() => {
+    return studyMaterials.filter(m => 
+      (isDocentOrAdmin || m.estat !== 'ocult') && 
+      (user.purchasedMaterialIds?.includes(m.id) || user.unlockedMaterialIds?.includes(m.id) || m.preuMerits === 0)
+    ).length;
+  }, [studyMaterials, user.purchasedMaterialIds, user.unlockedMaterialIds, isDocentOrAdmin]);
 
   // Filtrar materials segons permís i pestanya
   const visibleMaterials = studyMaterials.filter(m => {
     if (!isDocentOrAdmin && m.estat === 'ocult') return false;
     if (materialFilter === 'tots') return true;
     if (materialFilter === 'proximament') return m.estat === 'proximament';
-    if (materialFilter === 'adquirit') return user.purchasedMaterialIds?.includes(m.id);
+    if (materialFilter === 'adquirit') return Boolean(user.purchasedMaterialIds?.includes(m.id) || user.unlockedMaterialIds?.includes(m.id) || m.preuMerits === 0);
     return m.ambit === materialFilter;
   });
 
@@ -796,49 +927,77 @@ export const TiendaEscuts: React.FC<TiendaEscutsProps> = ({
           </div>
         )}
 
-        {/* Filter buttons per a Material d'Estudi */}
+        {/* Filter buttons dinàmics per a Material d'Estudi (Opció B: només surten si hi ha almenys 1 document) */}
         {storeTab === 'material' && (
           <div className="flex items-center gap-2 mt-5 flex-wrap">
             <button
+              type="button"
               onClick={() => setMaterialFilter('tots')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors cursor-pointer ${
-                materialFilter === 'tots' ? 'bg-amber-500 text-slate-950' : 'bg-slate-800 text-slate-400 hover:text-white'
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                materialFilter === 'tots' 
+                  ? 'bg-amber-500 text-slate-950 font-black shadow-md shadow-amber-500/20' 
+                  : 'bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700'
               }`}
             >
               Tots ({studyMaterials.filter(m => isDocentOrAdmin || m.estat !== 'ocult').length})
             </button>
-            <button
-              onClick={() => setMaterialFilter('Àmbit A')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors cursor-pointer ${
-                materialFilter === 'Àmbit A' ? 'bg-amber-500 text-slate-950' : 'bg-slate-800 text-slate-400 hover:text-white'
-              }`}
-            >
-              Àmbit A
-            </button>
-            <button
-              onClick={() => setMaterialFilter('Àmbit C')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors cursor-pointer ${
-                materialFilter === 'Àmbit C' ? 'bg-amber-500 text-slate-950' : 'bg-slate-800 text-slate-400 hover:text-white'
-              }`}
-            >
-              Àmbit C
-            </button>
-            <button
-              onClick={() => setMaterialFilter('proximament')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors cursor-pointer ${
-                materialFilter === 'proximament' ? 'bg-amber-500 text-slate-950' : 'bg-slate-800 text-slate-400 hover:text-white'
-              }`}
-            >
-              ⏳ Pròximament
-            </button>
-            <button
-              onClick={() => setMaterialFilter('adquirit')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors cursor-pointer ${
-                materialFilter === 'adquirit' ? 'bg-amber-500 text-slate-950' : 'bg-slate-800 text-slate-400 hover:text-white'
-              }`}
-            >
-              Descarregats ({user.purchasedMaterialIds?.length || 0})
-            </button>
+
+            {/* Botons d'Àmbit dinàmics: només apareixen si tenen com a mínim 1 document */}
+            {availableAmbitsWithCount.map(([ambitName, count]) => (
+              <button
+                key={ambitName}
+                type="button"
+                onClick={() => setMaterialFilter(ambitName)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  materialFilter === ambitName 
+                    ? 'bg-amber-500 text-slate-950 font-black shadow-md shadow-amber-500/20' 
+                    : 'bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700'
+                }`}
+              >
+                <span>{ambitName}</span>
+                <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${
+                  materialFilter === ambitName ? 'bg-slate-950 text-amber-400' : 'bg-slate-900 text-slate-400'
+                }`}>
+                  {count}
+                </span>
+              </button>
+            ))}
+
+            {/* ⏳ Pròximament: només si en té com a mínim 1 */}
+            {comingSoonCount > 0 && (
+              <button
+                type="button"
+                onClick={() => setMaterialFilter('proximament')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  materialFilter === 'proximament' 
+                    ? 'bg-amber-500 text-slate-950 font-black shadow-md shadow-amber-500/20' 
+                    : 'bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700'
+                }`}
+              >
+                <span>⏳ Pròximament</span>
+                <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${
+                  materialFilter === 'proximament' ? 'bg-slate-950 text-amber-400' : 'bg-slate-900 text-slate-400'
+                }`}>
+                  {comingSoonCount}
+                </span>
+              </button>
+            )}
+
+            {/* Adquirits / Descarregats */}
+            {purchasedCount > 0 && (
+              <button
+                type="button"
+                onClick={() => setMaterialFilter('adquirit')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  materialFilter === 'adquirit' 
+                    ? 'bg-emerald-500 text-slate-950 font-black shadow-md shadow-emerald-500/20' 
+                    : 'bg-slate-800 text-emerald-400 hover:text-white hover:bg-slate-700'
+                }`}
+              >
+                <Check className="w-3.5 h-3.5" />
+                <span>Adquirits ({purchasedCount})</span>
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -986,7 +1145,11 @@ export const TiendaEscuts: React.FC<TiendaEscutsProps> = ({
         <div className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {visibleMaterials.map((mat) => {
-              const isPurchased = Boolean(user.purchasedMaterialIds?.includes(mat.id) || mat.preuMerits === 0);
+              const isPurchased = Boolean(
+                user.purchasedMaterialIds?.includes(mat.id) || 
+                user.unlockedMaterialIds?.includes(mat.id) || 
+                mat.preuMerits === 0
+              );
               const isComingSoon = mat.estat === 'proximament';
               const isHidden = mat.estat === 'ocult';
 
@@ -1062,11 +1225,21 @@ export const TiendaEscuts: React.FC<TiendaEscutsProps> = ({
                     {isPurchased ? (
                       <button
                         type="button"
-                        onClick={() => handleBuyStudyMaterial(mat)}
-                        className="w-full py-2.5 px-4 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs uppercase tracking-wider rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer shadow-md shadow-emerald-600/20"
+                        onClick={() => handleOpenPurchasedDocument(mat)}
+                        disabled={downloadingMatId === mat.id}
+                        className="w-full py-2.5 px-4 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-75 text-white font-black text-xs uppercase tracking-wider rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer shadow-md shadow-emerald-600/20"
                       >
-                        <Download className="w-4 h-4" />
-                        <span>Descarregar / Obrir Document</span>
+                        {downloadingMatId === mat.id ? (
+                          <>
+                            <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                            <span>Generant enllaç segur...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Download className="w-4 h-4" />
+                            <span>Descarregar / Obrir Document</span>
+                          </>
+                        )}
                       </button>
                     ) : isComingSoon ? (
                       <button
@@ -1079,7 +1252,7 @@ export const TiendaEscuts: React.FC<TiendaEscutsProps> = ({
                       <button
                         type="button"
                         onClick={() => handleBuyStudyMaterial(mat)}
-                        disabled={user.merits < mat.preuMerits}
+                        disabled={user.merits < mat.preuMerits || downloadingMatId === mat.id}
                         className={`w-full py-2.5 px-4 font-black text-xs uppercase tracking-wider rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer ${
                           user.merits >= mat.preuMerits
                             ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-md shadow-amber-500/25'
@@ -1102,14 +1275,36 @@ export const TiendaEscuts: React.FC<TiendaEscutsProps> = ({
                           <Edit3 className="w-3.5 h-3.5" />
                           <span>Editar</span>
                         </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteMaterial(mat.id)}
-                          className="p-1.5 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors cursor-pointer"
-                          title="Eliminar document"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                        {confirmDeleteMaterialId === mat.id ? (
+                          <div className="flex items-center gap-1 animate-fadeIn">
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteMaterial(mat.id)}
+                              className="px-2.5 py-1 bg-red-600 hover:bg-red-500 text-white font-black text-[10px] rounded-lg transition-colors cursor-pointer shadow-md flex items-center gap-1 animate-pulse"
+                              title="Confirmar eliminació"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                              <span>Eliminar?</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setConfirmDeleteMaterialId(null)}
+                              className="p-1 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
+                              title="Cancel·lar"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setConfirmDeleteMaterialId(mat.id)}
+                            className="p-1.5 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors cursor-pointer"
+                            title="Eliminar document del catàleg"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>
@@ -1315,6 +1510,8 @@ export const TiendaEscuts: React.FC<TiendaEscutsProps> = ({
                     <option value="Àmbit C">Àmbit C (Seguretat)</option>
                     <option value="Àmbit D">Àmbit D (Cultura/Actualitat)</option>
                     <option value="Tots">Transversal / Tots</option>
+                    <option value="Psicotècnics">Psicotecnics</option>
+                    <option value="Actualitat">Actualitat</option>
                   </select>
                 </div>
               </div>
@@ -1345,14 +1542,84 @@ export const TiendaEscuts: React.FC<TiendaEscutsProps> = ({
                 </div>
               </div>
 
+              {/* CÀRREGA DE DOCUMENT LOCAL A SUPABASE STORAGE PROTEGIT */}
+              <div className="p-3.5 bg-slate-950/80 border border-sky-500/30 rounded-2xl space-y-2.5 shadow-inner">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-sky-400 font-bold text-xs">
+                    <Upload className="w-4 h-4 text-sky-400" />
+                    <span>Pujar Document Local (PDF, Word, PPT)</span>
+                  </div>
+                  <span className="text-[10px] text-emerald-400 font-medium bg-emerald-950/60 border border-emerald-800/40 px-2 py-0.5 rounded-full flex items-center gap-1">
+                    <Lock className="w-3 h-3 text-emerald-400" />
+                    <span>Protecció amb URL temporal (2 min)</span>
+                  </span>
+                </div>
+
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 pt-1">
+                  <label className={`px-4 py-2.5 rounded-xl border flex items-center justify-center gap-2 text-xs font-bold transition-all cursor-pointer ${
+                    isUploadingDoc 
+                      ? 'bg-slate-800 border-slate-700 text-slate-400 cursor-wait'
+                      : 'bg-sky-600 hover:bg-sky-500 border-sky-500 text-white shadow-md shadow-sky-600/25'
+                  }`}>
+                    {isUploadingDoc ? (
+                      <>
+                        <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        <span>Pujant a Supabase...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Upload className="w-4 h-4" />
+                        <span>Tria arxiu del dispositiu</span>
+                      </>
+                    )}
+                    <input
+                      type="file"
+                      disabled={isUploadingDoc}
+                      accept=".pdf,.doc,.docx,.pptx,.ppt,.txt,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                      onChange={handleDocumentFileUpload}
+                      className="hidden"
+                    />
+                  </label>
+
+                  {materialFormData.fileName && (
+                    <div className="flex-1 px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl flex items-center justify-between text-[11px] text-slate-300">
+                      <span className="truncate font-semibold text-white max-w-[180px] sm:max-w-[220px]" title={materialFormData.fileName}>
+                        📄 {materialFormData.fileName}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setMaterialFormData(prev => ({ ...prev, fileName: '', storagePath: '', arxiuUrl: '' }))}
+                        className="text-red-400 hover:text-red-300 ml-2 text-xs cursor-pointer"
+                        title="Descartar fitxer"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {uploadFeedback && (
+                  <div className="text-[11px] text-emerald-300 bg-emerald-950/40 border border-emerald-500/30 p-2 rounded-lg flex items-center gap-1.5">
+                    <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                    <span>{uploadFeedback}</span>
+                  </div>
+                )}
+
+                <p className="text-[10px] text-slate-400 leading-relaxed">
+                  🔒 L'arxiu es guarda al teu Storage de Supabase. Quan un alumne el compri amb mèrits, l'aplicació generarà un <b>enllaç segur amb caducitat d'un sol ús (2 minuts)</b>. Si comparteix l'enllaç per WhatsApp o xarxes, caducarà immediatament!
+                </p>
+              </div>
+
               <div>
-                <label className="block text-slate-300 font-bold mb-1">URL de descàrrega / visualització</label>
+                <label className="block text-slate-300 font-bold mb-1">
+                  URL de descàrrega / visualització <span className="text-slate-500 font-normal">(o enllaç extern Drive/Web)</span>
+                </label>
                 <input
-                  type="url"
+                  type="text"
                   value={materialFormData.arxiuUrl}
                   onChange={(e) => setMaterialFormData({ ...materialFormData, arxiuUrl: e.target.value })}
-                  placeholder="https://drive.google.com/... o URL directa de l'arxiu"
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-white"
+                  placeholder="Omplert automàticament en pujar l'arxiu o enganxa una URL externa..."
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-white font-mono text-[11px]"
                 />
               </div>
 

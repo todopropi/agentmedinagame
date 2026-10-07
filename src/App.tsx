@@ -1057,18 +1057,20 @@ export default function App() {
     }
     AudioEngine.playCorrect();
     const updatedMerits = currentUser.merits - material.preuMerits;
-    const unlocked = Array.from(new Set([...(currentUser.unlockedMaterialIds || []), material.id]));
+    const unlocked = Array.from(new Set([...(currentUser.unlockedMaterialIds || []), ...(currentUser.purchasedMaterialIds || []), material.id]));
     const updatedUser: UserProfile = {
       ...currentUser,
       merits: updatedMerits,
-      unlockedMaterialIds: unlocked
+      unlockedMaterialIds: unlocked,
+      purchasedMaterialIds: unlocked
     };
     setCurrentUser(updatedUser);
     saveStoredLocalUser(updatedUser);
     await syncUserProfileUpdate(updatedUser);
     await syncSupabaseUserProgression(currentUser.uid, {
       merits: updatedMerits,
-      unlockedMaterialIds: unlocked
+      unlockedMaterialIds: unlocked,
+      purchasedMaterialIds: unlocked
     });
     confetti({ particleCount: 60, spread: 70 });
   };
@@ -1088,6 +1090,7 @@ export default function App() {
       topicId,
       mastery: Math.min(100, Math.max(0, mastery)),
       lastActivityTimestamp: Date.now(),
+      lastPlayedAt: Date.now(),
       correctAnswers: (prev?.correctAnswers || 0) + correctAnswers,
       totalQuestions: (prev?.totalQuestions || 0) + totalQuestions
     };

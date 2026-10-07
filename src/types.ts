@@ -107,6 +107,9 @@ export interface StudyMaterial {
   temaAssociat?: string;
   preuMerits: number;
   arxiuUrl: string; // URL pública de descàrrega o visualització
+  storagePath?: string; // Ruta protegida a Supabase Storage (per a generar URLs signades temporals)
+  fileName?: string; // Nom original de l'arxiu carregat
+  bucketName?: string; // Nom del bucket ('study-materials' o 'app-media')
   estat: 'actiu' | 'proximament' | 'ocult';
   creadorEmail?: string;
   dataCreacio?: string;
