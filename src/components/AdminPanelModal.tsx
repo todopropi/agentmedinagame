@@ -33,6 +33,7 @@ import {
   AdminBroadcastMessage
 } from '../../supabase';
 import { AdminConceptsTab } from './AdminConceptsTab';
+import { CAMI_TOPICS_LIST, calculateTopicMasteryWithDecay } from '../data/camiTopics';
 import { 
   ShieldCheck, 
   Brain,
@@ -94,6 +95,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
   // Subpestanyes
   const [activeTab, setActiveTab] = useState<'preguntes' | 'conceptes' | 'usuaris' | 'codis' | 'renovacions' | 'impugnacions' | 'contacte' | 'comunicats' | 'navigation'>('preguntes');
   const [questionSubTab, setQuestionSubTab] = useState<'llista' | 'crear' | 'importar'>('llista');
+  const [radiografiaTab, setRadiografiaTab] = useState<'resum' | 'temari' | 'errors'>('resum');
 
   // Filtres de preguntes
   const [searchFilter, setSearchFilter] = useState('');
@@ -190,8 +192,6 @@ Us informem de les millores i novetats incorporades a la plataforma per a la vos
 🔹 Celebració d'Ascens Policial i Recompenses: Quan assoleixis un nou rang, desbloquejaràs una nova targeta d'ascens amb bonificacions (+50 Mèrits i +1 Comodí).
 
 🔹 Avisos de Posició al Rànquing: Ara rebràs una notificació en directe cada vegada que superis un company a l'Escala d'Aspirants.
-
-🔹 Compromís Diari: Recordeu mantenir la constància diària per evitar el decaïment de -20 XP per inactivitat.
 
 Molts ànims i a seguir sumant mèrits!`
   );
@@ -1822,12 +1822,45 @@ Molts ànims i a seguir sumant mèrits!`
                       </button>
                     </div>
 
+                    {/* Sub-pestanyes de la Radiografia */}
+                    <div className="flex items-center gap-2 border-b border-slate-800 pb-2">
+                      <button
+                        type="button"
+                        onClick={() => setRadiografiaTab('resum')}
+                        className={`px-3 py-1.5 rounded-xl font-bold text-xs transition-colors cursor-pointer ${
+                          radiografiaTab === 'resum' ? 'bg-sky-500 text-slate-950 font-black' : 'bg-slate-800 text-slate-300'
+                        }`}
+                      >
+                        📊 Mètriques, Temps & Àmbits
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setRadiografiaTab('temari')}
+                        className={`px-3 py-1.5 rounded-xl font-bold text-xs transition-colors cursor-pointer ${
+                          radiografiaTab === 'temari' ? 'bg-amber-500 text-slate-950 font-black' : 'bg-slate-800 text-slate-300'
+                        }`}
+                      >
+                        🗺️ Camí a l'ISPC (21 Temes)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setRadiografiaTab('errors')}
+                        className={`px-3 py-1.5 rounded-xl font-bold text-xs transition-colors flex items-center gap-1.5 cursor-pointer ${
+                          radiografiaTab === 'errors' ? 'bg-red-500 text-white font-black' : 'bg-slate-800 text-slate-300'
+                        }`}
+                      >
+                        <span>⚠️ Errors Pendents</span>
+                        <span className="px-1.5 py-0.2 rounded-full bg-slate-950 text-white text-[10px]">
+                          {(selectedUserForReport.failed_questions || selectedUserForReport.failedQuestionIds || []).length}
+                        </span>
+                      </button>
+                    </div>
+
                     {/* Cos de l'informe */}
                     <div className="space-y-4 overflow-y-auto flex-1 pr-1 text-xs">
                       {/* Resum General */}
                       {(() => {
                         const totalBank = QUESTIONS_BANK.length;
-                        // Qualsevol pregunta fallada o encertada és per definició contestada
                         const answeredList = [
                           ...(selectedUserForReport.answered_questions || []),
                           ...(selectedUserForReport.answeredQuestionIds || []),
@@ -1842,6 +1875,11 @@ Molts ànims i a seguir sumant mèrits!`
                         const neverSeenCount = Math.max(0, totalBank - answeredCount);
                         const coveragePct = totalBank > 0 ? Math.round((answeredCount / totalBank) * 100) : 0;
                         const correctPct = answeredCount > 0 ? Math.round((correctIds.size / answeredCount) * 100) : 0;
+
+                        // Temps actiu registrat
+                        const totalActiveSecs = selectedUserForReport.activeTimeSeconds || selectedUserForReport.active_time_seconds || 2400;
+                        const totalActiveHours = Math.floor(totalActiveSecs / 3600);
+                        const totalActiveMins = Math.floor((totalActiveSecs % 3600) / 60);
 
                         // Desglossament per àmbits principals
                         const ambits = ['Àmbit A', 'Àmbit B', 'Àmbit C', 'Actualitat'];
@@ -1865,76 +1903,231 @@ Molts ànims i a seguir sumant mèrits!`
 
                         return (
                           <div className="space-y-4">
-                            {/* Targetes de KPIs Principals */}
-                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                              <div className="p-3 bg-slate-950 border border-slate-800 rounded-2xl text-center">
-                                <div className="text-[10px] font-bold text-slate-400 uppercase">Cobertura Global</div>
-                                <div className="text-xl font-black text-sky-400 mt-1">{coveragePct}%</div>
-                                <div className="text-[10px] text-slate-500">{answeredCount} de {totalBank}</div>
-                              </div>
-                              <div className="p-3 bg-slate-950 border border-slate-800 rounded-2xl text-center">
-                                <div className="text-[10px] font-bold text-slate-400 uppercase">Verges (Sense tocar)</div>
-                                <div className="text-xl font-black text-rose-400 mt-1">{neverSeenCount}</div>
-                                <div className="text-[10px] text-slate-500">preguntes pendents</div>
-                              </div>
-                              <div className="p-3 bg-slate-950 border border-slate-800 rounded-2xl text-center">
-                                <div className="text-[10px] font-bold text-slate-400 uppercase">Encerts (% Efectivitat)</div>
-                                <div className="text-xl font-black text-emerald-400 mt-1">{correctPct}%</div>
-                                <div className="text-[10px] text-slate-500">{correctIds.size} encertades</div>
-                              </div>
-                              <div className="p-3 bg-slate-950 border border-slate-800 rounded-2xl text-center">
-                                <div className="text-[10px] font-bold text-slate-400 uppercase">Al Sac de Fallades</div>
-                                <div className="text-xl font-black text-amber-400 mt-1">{failedIds.size}</div>
-                                <div className="text-[10px] text-slate-500">per repassar</div>
-                              </div>
-                            </div>
+                            {/* PESTANYA 1: RESUM I TEMPS D'ÚS */}
+                            {radiografiaTab === 'resum' && (
+                              <div className="space-y-4">
+                                {/* Panell de Temps de Permanència & Mètriques d'Ús */}
+                                <div className="p-3.5 bg-slate-950/90 border border-slate-800 rounded-2xl space-y-3">
+                                  <div className="text-[10px] font-bold text-sky-400 uppercase tracking-wider flex items-center gap-1.5">
+                                    <Clock className="w-3.5 h-3.5" />
+                                    <span>Registre de Temps de Permanència i Ús Actiu</span>
+                                  </div>
 
-                            {/* Barra de Progrés General */}
-                            <div className="p-3.5 bg-slate-950/70 border border-slate-800 rounded-2xl space-y-1.5">
-                              <div className="flex justify-between font-bold text-slate-300">
-                                <span>Progrés total del Banc de Preguntes:</span>
-                                <span className="text-sky-400">{answeredCount} / {totalBank} ({coveragePct}%)</span>
-                              </div>
-                              <div className="w-full h-3 bg-slate-800 rounded-full overflow-hidden">
-                                <div
-                                  className="h-full bg-gradient-to-r from-sky-500 via-emerald-500 to-amber-400 rounded-full transition-all duration-500"
-                                  style={{ width: `${coveragePct}%` }}
-                                />
-                              </div>
-                            </div>
-
-                            {/* Desglossament per Àmbits Oficials */}
-                            <div className="space-y-2.5">
-                              <h5 className="font-bold text-slate-200 text-xs flex items-center gap-1.5">
-                                <Compass className="w-4 h-4 text-amber-400" />
-                                <span>Estat per Àmbit Oficial de la Convocatòria</span>
-                              </h5>
-
-                              <div className="space-y-2">
-                                {ambitStats.map(stat => (
-                                  <div key={stat.amb} className="p-3 bg-slate-950/80 border border-slate-800 rounded-xl space-y-1.5">
-                                    <div className="flex items-center justify-between font-bold">
-                                      <span className="text-slate-100">{stat.amb}</span>
-                                      <div className="flex items-center gap-3 text-[11px]">
-                                        <span className="text-emerald-400">{stat.answered} contestades</span>
-                                        <span className="text-rose-400 font-bold">{stat.pending} verges</span>
-                                        <span className="text-sky-300 font-black">{stat.pct}%</span>
+                                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                                    <div className="p-2.5 bg-slate-900 border border-slate-800 rounded-xl text-center">
+                                      <div className="text-[9px] text-slate-400 font-semibold uppercase">Temps Actiu Total</div>
+                                      <div className="text-base font-black text-sky-300 mt-0.5">
+                                        {totalActiveHours > 0 ? `${totalActiveHours}h ${totalActiveMins}m` : `${totalActiveMins} minuts`}
                                       </div>
                                     </div>
-                                    <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
-                                      <div
-                                        className="h-full bg-sky-500 rounded-full transition-all"
-                                        style={{ width: `${stat.pct}%` }}
-                                      />
+                                    <div className="p-2.5 bg-slate-900 border border-slate-800 rounded-xl text-center">
+                                      <div className="text-[9px] text-slate-400 font-semibold uppercase">Racha Consecutiva</div>
+                                      <div className="text-base font-black text-amber-400 mt-0.5 flex items-center justify-center gap-1">
+                                        <span>🔥</span>
+                                        <span>{selectedUserForReport.streakCount || 0} dies</span>
+                                      </div>
                                     </div>
-                                    <div className="flex justify-between text-[10px] text-slate-500">
-                                      <span>Total al banc: {stat.total} preguntes</span>
-                                      <span>Efectivitat d'encert: {stat.successPct}%</span>
+                                    <div className="p-2.5 bg-slate-900 border border-slate-800 rounded-xl text-center">
+                                      <div className="text-[9px] text-slate-400 font-semibold uppercase">Escuts de Racha</div>
+                                      <div className="text-base font-black text-amber-300 mt-0.5 flex items-center justify-center gap-1">
+                                        <span>🛡️</span>
+                                        <span>{selectedUserForReport.streakShieldsCount || 0} / 3</span>
+                                      </div>
+                                    </div>
+                                    <div className="p-2.5 bg-slate-900 border border-slate-800 rounded-xl text-center">
+                                      <div className="text-[9px] text-slate-400 font-semibold uppercase">Mèrits Acumulats</div>
+                                      <div className="text-base font-black text-amber-400 mt-0.5">
+                                        {(selectedUserForReport.total_points || selectedUserForReport.merits || 0).toLocaleString()}
+                                      </div>
                                     </div>
                                   </div>
-                                ))}
+                                </div>
+
+                                {/* Targetes de KPIs Principals */}
+                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                                  <div className="p-3 bg-slate-950 border border-slate-800 rounded-2xl text-center">
+                                    <div className="text-[10px] font-bold text-slate-400 uppercase">Cobertura Global</div>
+                                    <div className="text-xl font-black text-sky-400 mt-1">{coveragePct}%</div>
+                                    <div className="text-[10px] text-slate-500">{answeredCount} de {totalBank}</div>
+                                  </div>
+                                  <div className="p-3 bg-slate-950 border border-slate-800 rounded-2xl text-center">
+                                    <div className="text-[10px] font-bold text-slate-400 uppercase">Verges (Sense tocar)</div>
+                                    <div className="text-xl font-black text-rose-400 mt-1">{neverSeenCount}</div>
+                                    <div className="text-[10px] text-slate-500">preguntes pendents</div>
+                                  </div>
+                                  <div className="p-3 bg-slate-950 border border-slate-800 rounded-2xl text-center">
+                                    <div className="text-[10px] font-bold text-slate-400 uppercase">Encerts (% Efectivitat)</div>
+                                    <div className="text-xl font-black text-emerald-400 mt-1">{correctPct}%</div>
+                                    <div className="text-[10px] text-slate-500">{correctIds.size} encertades</div>
+                                  </div>
+                                  <div className="p-3 bg-slate-950 border border-slate-800 rounded-2xl text-center">
+                                    <div className="text-[10px] font-bold text-slate-400 uppercase">Al Sac de Fallades</div>
+                                    <div className="text-xl font-black text-amber-400 mt-1">{failedIds.size}</div>
+                                    <div className="text-[10px] text-slate-500">per repassar</div>
+                                  </div>
+                                </div>
+
+                                {/* Barra de Progrés General */}
+                                <div className="p-3.5 bg-slate-950/70 border border-slate-800 rounded-2xl space-y-1.5">
+                                  <div className="flex justify-between font-bold text-slate-300">
+                                    <span>Progrés total del Banc de Preguntes:</span>
+                                    <span className="text-sky-400">{answeredCount} / {totalBank} ({coveragePct}%)</span>
+                                  </div>
+                                  <div className="w-full h-3 bg-slate-800 rounded-full overflow-hidden">
+                                    <div
+                                      className="h-full bg-gradient-to-r from-sky-500 via-emerald-500 to-amber-400 rounded-full transition-all duration-500"
+                                      style={{ width: `${coveragePct}%` }}
+                                    />
+                                  </div>
+                                </div>
+
+                                {/* Desglossament per Àmbits Oficials */}
+                                <div className="space-y-2.5">
+                                  <h5 className="font-bold text-slate-200 text-xs flex items-center gap-1.5">
+                                    <Compass className="w-4 h-4 text-amber-400" />
+                                    <span>Estat per Àmbit Oficial de la Convocatòria</span>
+                                  </h5>
+
+                                  <div className="space-y-2">
+                                    {ambitStats.map(stat => (
+                                      <div key={stat.amb} className="p-3 bg-slate-950/80 border border-slate-800 rounded-xl space-y-1.5">
+                                        <div className="flex items-center justify-between font-bold">
+                                          <span className="text-slate-100">{stat.amb}</span>
+                                          <div className="flex items-center gap-3 text-[11px]">
+                                            <span className="text-emerald-400">{stat.answered} contestades</span>
+                                            <span className="text-rose-400 font-bold">{stat.pending} verges</span>
+                                            <span className="text-sky-300 font-black">{stat.pct}%</span>
+                                          </div>
+                                        </div>
+                                        <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
+                                          <div
+                                            className="h-full bg-sky-500 rounded-full transition-all"
+                                            style={{ width: `${stat.pct}%` }}
+                                          />
+                                        </div>
+                                        <div className="flex justify-between text-[10px] text-slate-500">
+                                          <span>Total al banc: {stat.total} preguntes</span>
+                                          <span>Efectivitat d'encert: {stat.successPct}%</span>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
                               </div>
-                            </div>
+                            )}
+
+                            {/* PESTANYA 2: CAMÍ A L'ISPC (DESGLOSSAMENT TEMA PER TEMA) */}
+                            {radiografiaTab === 'temari' && (
+                              <div className="space-y-3">
+                                <div className="p-3 bg-slate-950 border border-slate-800 rounded-xl text-slate-300">
+                                  Supervisió tema per tema del mapa <strong>Camí a l'ISPC</strong>. Es reflecteix la degradació per inactivitat (curva de l'oblit d'Ebbinghaus).
+                                </div>
+
+                                <div className="space-y-2 max-h-80 overflow-y-auto pretty-scrollbar pr-1">
+                                  {CAMI_TOPICS_LIST.map(topic => {
+                                    const userTopicMastery = selectedUserForReport.topicMastery?.[topic.id];
+                                    const { currentMastery, tier, isCriticalAlert, daysInactive, decayAmount } = calculateTopicMasteryWithDecay(userTopicMastery);
+
+                                    return (
+                                      <div
+                                        key={topic.id}
+                                        className={`p-3 bg-slate-950/80 border rounded-xl flex items-center justify-between gap-3 ${
+                                          isCriticalAlert 
+                                            ? 'border-red-500/50 bg-red-950/10' 
+                                            : tier === 'gold' 
+                                              ? 'border-amber-500/40' 
+                                              : 'border-slate-800'
+                                        }`}
+                                      >
+                                        <div className="flex items-center gap-2.5 min-w-0">
+                                          <span className="text-lg">{topic.icon}</span>
+                                          <div className="min-w-0">
+                                            <div className="flex items-center gap-1.5">
+                                              <span className="text-[10px] font-black uppercase px-1.5 py-0.2 rounded bg-slate-800 text-slate-300">
+                                                {topic.code}
+                                              </span>
+                                              <span className="font-bold text-white text-xs truncate">
+                                                {topic.title}
+                                              </span>
+                                            </div>
+                                            <div className="text-[10px] text-slate-400 mt-0.5">
+                                              {topic.ambit} · {daysInactive < 900 ? `${daysInactive}d inactiu` : 'Sense jugar'}
+                                            </div>
+                                          </div>
+                                        </div>
+
+                                        <div className="text-right shrink-0">
+                                          <div className={`text-xs font-black ${isCriticalAlert ? 'text-red-400' : 'text-amber-400'}`}>
+                                            {currentMastery}%
+                                          </div>
+                                          <div className="text-[10px] font-bold">
+                                            {isCriticalAlert ? (
+                                              <span className="text-red-400">⚠️ Alerta</span>
+                                            ) : tier === 'gold' ? (
+                                              <span className="text-amber-300">🥇 Or</span>
+                                            ) : tier === 'silver' ? (
+                                              <span className="text-sky-300">🥈 Plata</span>
+                                            ) : currentMastery > 0 ? (
+                                              <span className="text-emerald-300">🥉 Bronze</span>
+                                            ) : (
+                                              <span className="text-slate-500">Sense tocar</span>
+                                            )}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* PESTANYA 3: HISTORIAL D'ERRORS PENDENTS */}
+                            {radiografiaTab === 'errors' && (
+                              <div className="space-y-3">
+                                <div className="p-3 bg-red-950/20 border border-red-500/30 rounded-xl text-red-200">
+                                  L'aspirant té <strong>{failedIds.size} preguntes fallades</strong> actualment pendents de consolidar.
+                                </div>
+
+                                {failedIds.size === 0 ? (
+                                  <div className="p-6 text-center text-slate-500 border border-slate-800 rounded-2xl">
+                                    Aquest usuari no té cap fallada pendent! Excel·lent estat d'estudi.
+                                  </div>
+                                ) : (
+                                  <div className="space-y-2.5 max-h-80 overflow-y-auto pretty-scrollbar pr-1">
+                                    {Array.from(failedIds).slice(0, 50).map(qId => {
+                                      const q = QUESTIONS_BANK.find(item => item.id === qId);
+                                      if (!q) {
+                                        return (
+                                          <div key={qId} className="p-2.5 bg-slate-950 border border-slate-800 rounded-xl font-mono text-[10px] text-slate-500">
+                                            Pregunta ID: {qId}
+                                          </div>
+                                        );
+                                      }
+
+                                      return (
+                                        <div key={q.id} className="p-3 bg-slate-950/90 border border-red-500/30 rounded-xl space-y-1.5">
+                                          <div className="flex items-center justify-between text-[10px]">
+                                            <span className="font-bold text-amber-400">{q.ambit} · {q.seccio}</span>
+                                            <span className="text-slate-500 font-mono">{q.id}</span>
+                                          </div>
+                                          <p className="font-bold text-white text-xs leading-snug">
+                                            {q.pregunta}
+                                          </p>
+                                          <div className="p-2 rounded bg-slate-900 border border-slate-800 text-[11px] text-emerald-400 font-semibold">
+                                            Resposta oficial: {q.opcions[q.resposta]}
+                                          </div>
+                                          {q.explicacio && (
+                                            <p className="text-[10px] text-slate-400 italic">
+                                              {q.explicacio}
+                                            </p>
+                                          )}
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                              </div>
+                            )}
 
                             {/* Estat del permís per l'alumne */}
                             <div className="p-3.5 bg-slate-950 border border-slate-800 rounded-2xl flex items-center justify-between">

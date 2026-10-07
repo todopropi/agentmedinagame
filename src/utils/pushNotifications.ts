@@ -1,4 +1,4 @@
-import { doc, setDoc, updateDoc, collection, onSnapshot, query, where, orderBy, limit, addDoc } from 'firebase/firestore';
+import { doc, setDoc, updateDoc, collection, onSnapshot, query, where, orderBy, limit, addDoc, deleteDoc, getDocs } from 'firebase/firestore';
 import { getFirestoreDb } from '../firebase';
 import { InAppNotification, DeviceTokenRecord } from '../types';
 import { AudioEngine } from './audio';
@@ -290,15 +290,16 @@ export async function triggerTurnPushNotification(params: {
     return { success: true, message: 'Bot rival o IA, no requereix FCM extern' };
   }
 
-  const notificationMessage = customMessage || `És el teu torn a la partida amb ${senderName}!`;
-  const notificationTitle = `⚔️ Torn de Duel - ${senderName}`;
+  const isTocMessage = customMessage?.toUpperCase().includes('TOC');
+  const notificationMessage = customMessage || `⚔️ És el teu torn contra ${senderName}! Contesta abans d'1 setmana (168h) per no perdre per inactivitat.`;
+  const notificationTitle = isTocMessage ? `🚨 Toc d'Atenció - ${senderName}` : `⚔️ Torn de Duel - ${senderName}`;
 
   const db = getFirestoreDb();
   const notifId = `notif_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
 
   const notifData: InAppNotification = {
     id: notifId,
-    type: 'turn_notification',
+    type: isTocMessage ? 'toc_alert' : 'turn_notification',
     matchId,
     fromUid: senderUid,
     fromName: senderName,
@@ -307,6 +308,9 @@ export async function triggerTurnPushNotification(params: {
     read: false,
     timestamp: Date.now()
   };
+
+  // Guardar al magatzem local per a lliurament immediat entre perfils al mateix navegador
+  appendStoredUserNotification(targetUid, notifData);
 
   try {
     // 1. Guardar a Firestore sota l'usuari objectiu (Jugador B)
@@ -383,11 +387,16 @@ export function subscribeToUserNotifications(
         snapshot.docChanges().forEach((change) => {
           if (change.type === 'added') {
             const data = change.doc.data() as InAppNotification;
+            appendStoredUserNotification(userId, data);
             if (!seenIds.has(data.id)) {
               seenIds.add(data.id);
-              if (!initialLoad && !data.read) {
-                AudioEngine.playNotification();
-                // Si l'usuari té l'app en primer pla, l'alerta in-app (Toast) ja s'encarrega d'avisar-lo sense duplicar a la barra d'Android
+              const isRecent = (Date.now() - (data.timestamp || 0)) < 48 * 3600 * 1000;
+              if (!data.read && isRecent) {
+                if (!initialLoad) {
+                  AudioEngine.playNotification();
+                }
+                // Mostrar alerta nativa a la barra de notificacions del sistema operatiu (Android / Web)
+                showNativePushAlert(data.title || '⚔️ Torn de Duel - Agent Medina', data.message || '', data.matchId);
                 onNewNotification(data);
               }
             }
@@ -410,10 +419,14 @@ export function subscribeToUserNotifications(
       eventSource.onmessage = (event) => {
         try {
           const parsed = JSON.parse(event.data);
+          if (parsed && parsed.id) {
+            appendStoredUserNotification(userId, parsed);
+          }
           if (parsed && parsed.id && !seenIds.has(parsed.id)) {
             seenIds.add(parsed.id);
             AudioEngine.playNotification();
-            // L'usuari té la pestanya oberta: mostrem l'avís in-app Toast sense duplicar la notificació del Service Worker
+            // Mostrar alerta nativa a la barra de notificacions del sistema operatiu (Android / Web)
+            showNativePushAlert(parsed.title || '⚔️ Torn de Duel - Agent Medina', parsed.message || '', parsed.matchId);
             onNewNotification(parsed);
           }
         } catch (parseErr) {
@@ -452,6 +465,19 @@ export async function showNativePushAlert(title: string, body: string, matchId?:
 
   // 1. Mostrar mitjançant el Service Worker (mètode natiu i obligatori per a Android)
   if ('serviceWorker' in navigator) {
+    try {
+      let reg = await navigator.serviceWorker.getRegistration();
+      if (!reg) {
+        reg = await registerPushServiceWorker();
+      }
+      if (reg && reg.showNotification) {
+        await reg.showNotification(title, options);
+        return;
+      }
+    } catch (e) {
+      console.warn('showNotification through getRegistration failed:', e);
+    }
+
     try {
       const reg = await navigator.serviceWorker.ready;
       if (reg && reg.showNotification) {
@@ -638,3 +664,95 @@ export async function sendTestNotificationToSelf(user: { uid: string; displayNam
     isSelfTest: true
   });
 }
+
+// =========================================================================
+// GESTIÓ I PERSISTÈNCIA DE NOTIFICACIONS PENDENTS PER A L'USUARI
+// =========================================================================
+
+export function getStoredUserNotifications(userId: string): InAppNotification[] {
+  try {
+    const raw = localStorage.getItem(`agent_medina_notifications_${userId}`);
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+export function saveStoredUserNotifications(userId: string, list: InAppNotification[]): void {
+  try {
+    localStorage.setItem(`agent_medina_notifications_${userId}`, JSON.stringify(list));
+  } catch (e) {}
+}
+
+export function appendStoredUserNotification(userId: string, notif: InAppNotification): void {
+  const current = getStoredUserNotifications(userId);
+  if (!current.some(n => n.id === notif.id)) {
+    saveStoredUserNotifications(userId, [notif, ...current]);
+  }
+}
+
+export async function fetchUserNotificationsList(userId: string): Promise<InAppNotification[]> {
+  const local = getStoredUserNotifications(userId);
+  const db = getFirestoreDb();
+  if (!db || !userId) return local;
+
+  try {
+    const notifsCol = collection(db, 'users', userId, 'notifications');
+    const q = query(notifsCol, limit(50));
+    const snap = await getDocs(q);
+    const fsList: InAppNotification[] = [];
+    snap.forEach(d => {
+      fsList.push(d.data() as InAppNotification);
+    });
+    const map = new Map<string, InAppNotification>();
+    local.forEach(n => map.set(n.id, n));
+    fsList.forEach(n => map.set(n.id, n));
+    const merged = Array.from(map.values()).sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+    saveStoredUserNotifications(userId, merged);
+    return merged;
+  } catch (e) {
+    return local;
+  }
+}
+
+export async function deleteUserNotification(userId: string, notifId: string): Promise<void> {
+  const local = getStoredUserNotifications(userId);
+  const updated = local.filter(n => n.id !== notifId);
+  saveStoredUserNotifications(userId, updated);
+
+  const db = getFirestoreDb();
+  if (db && userId) {
+    try {
+      await deleteDoc(doc(db, 'users', userId, 'notifications', notifId));
+    } catch (e) {}
+  }
+}
+
+export async function clearAllUserNotifications(userId: string): Promise<void> {
+  saveStoredUserNotifications(userId, []);
+
+  const db = getFirestoreDb();
+  if (db && userId) {
+    try {
+      const snap = await getDocs(collection(db, 'users', userId, 'notifications'));
+      const promises = snap.docs.map(d => deleteDoc(d.ref));
+      await Promise.all(promises);
+    } catch (e) {}
+  }
+}
+
+export async function markAllUserNotificationsAsRead(userId: string): Promise<void> {
+  const local = getStoredUserNotifications(userId);
+  const updated = local.map(n => ({ ...n, read: true }));
+  saveStoredUserNotifications(userId, updated);
+
+  const db = getFirestoreDb();
+  if (db && userId) {
+    try {
+      const snap = await getDocs(collection(db, 'users', userId, 'notifications'));
+      const promises = snap.docs.map(d => updateDoc(d.ref, { read: true }));
+      await Promise.all(promises);
+    } catch (e) {}
+  }
+}
+

@@ -1,7 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { UserProfile, SpecializedShield } from '../types';
+import { UserProfile, SpecializedShield, StudyMaterial } from '../types';
 import { getCustomShields, saveCustomShields, DEFAULT_SHIELDS_LIST } from '../data/badges';
-import { fetchSupabaseStoreCatalog, subscribeToStoreCatalog, uploadSupabaseImage, deleteSupabaseStoreItem } from '../../supabase';
+import { 
+  fetchSupabaseStoreCatalog, 
+  subscribeToStoreCatalog, 
+  uploadSupabaseImage, 
+  deleteSupabaseStoreItem,
+  fetchSupabaseStudyMaterials,
+  syncSupabaseStudyMaterials,
+  DEFAULT_STUDY_MATERIALS
+} from '../../supabase';
 import { ShieldRenderer } from './ShieldRenderer';
 import { TedaxBadge } from './TedaxBadge';
 import { AudioEngine } from '../utils/audio';
@@ -23,7 +31,16 @@ import {
   ShieldAlert,
   Lock,
   Trophy,
-  Crown
+  Crown,
+  FileText,
+  Download,
+  ExternalLink,
+  Eye,
+  EyeOff,
+  Flame,
+  Shield,
+  Zap,
+  BookOpen
 } from 'lucide-react';
 
 interface TiendaEscutsProps {
@@ -31,19 +48,60 @@ interface TiendaEscutsProps {
   onEquipShield: (shieldId: string) => void;
   onBuyShield: (shield: SpecializedShield) => void;
   onBuyWildcard?: () => void;
+  onBuyStreakShield?: () => void;
+  onBuyStudyMaterial?: (material: StudyMaterial) => void;
 }
 
 export const TiendaEscuts: React.FC<TiendaEscutsProps> = ({
   user,
   onEquipShield,
   onBuyShield,
-  onBuyWildcard
+  onBuyWildcard,
+  onBuyStreakShield,
+  onBuyStudyMaterial
 }) => {
   const normEmail = user?.email?.toLowerCase().trim();
   const isAdmin = Boolean(user?.isAdmin || normEmail === 'opossscar@gmail.com');
+  const isDocentOrAdmin = Boolean(
+    isAdmin || 
+    user?.role === 'question_editor' || 
+    user?.role === 'admin' || 
+    normEmail === 'opossscar@gmail.com'
+  );
+
+  // Pestanya principal de la Botiga: Escuts, Materials d'Estudi, Avantatges
+  const [storeTab, setStoreTab] = useState<'escuts' | 'material' | 'avantatges'>('escuts');
+
   const [filterCategory, setFilterCategory] = useState<'tots' | 'campanya' | 'desbloquejats' | 'tedax'>('tots');
   const [shieldsList, setShieldsList] = useState<SpecializedShield[]>(() => getCustomShields());
   const [isSaving, setIsSaving] = useState(false);
+
+  // Gestió de Material d'Estudi / Apunts
+  const [studyMaterials, setStudyMaterials] = useState<StudyMaterial[]>(() => DEFAULT_STUDY_MATERIALS);
+  const [materialFilter, setMaterialFilter] = useState<string>('tots');
+  const [isMaterialModalOpen, setIsMaterialModalOpen] = useState(false);
+  const [editingMaterial, setEditingMaterial] = useState<StudyMaterial | null>(null);
+  const [isSavingMaterial, setIsSavingMaterial] = useState(false);
+  const [materialFormData, setMaterialFormData] = useState<Partial<StudyMaterial>>({
+    titol: '',
+    descripcio: '',
+    format: 'pdf',
+    ambit: 'Àmbit A',
+    temaAssociat: '',
+    preuMerits: 25,
+    arxiuUrl: '',
+    estat: 'actiu',
+    tamanyText: ''
+  });
+
+  // Carregar materials d'estudi
+  useEffect(() => {
+    fetchSupabaseStudyMaterials().then(mats => {
+      if (Array.isArray(mats) && mats.length > 0) {
+        setStudyMaterials(mats);
+      }
+    }).catch(console.warn);
+  }, []);
 
   // Sincronització en directe del catàleg de la botiga des de Supabase
   useEffect(() => {
@@ -315,6 +373,176 @@ export const TiendaEscuts: React.FC<TiendaEscutsProps> = ({
     }
   };
 
+  // Gestió de compra de Material d'Estudi
+  const handleBuyStudyMaterial = (material: StudyMaterial) => {
+    if (material.estat === 'proximament') {
+      alert("Aquest material està marcat com a 'Pròximament' per l'equip de docència. Estarà disponible aviat!");
+      return;
+    }
+
+    const isAlreadyBought = user.purchasedMaterialIds?.includes(material.id);
+    if (isAlreadyBought) {
+      if (material.arxiuUrl) {
+        window.open(material.arxiuUrl, '_blank', 'noopener,noreferrer');
+      } else {
+        alert("Enllaç no disponible de moment.");
+      }
+      return;
+    }
+
+    if (material.preuMerits > 0 && user.merits < material.preuMerits) {
+      AudioEngine.playWrong();
+      alert(`Et falten ${(material.preuMerits - user.merits).toLocaleString()} Mèrits per adquirir aquest document.`);
+      return;
+    }
+
+    AudioEngine.playCorrect();
+    if (onBuyStudyMaterial) {
+      onBuyStudyMaterial(material);
+    } else {
+      user.merits = Math.max(0, user.merits - material.preuMerits);
+      user.purchasedMaterialIds = [...(user.purchasedMaterialIds || []), material.id];
+    }
+
+    confetti({
+      particleCount: 60,
+      spread: 60,
+      origin: { y: 0.7 }
+    });
+
+    if (material.arxiuUrl) {
+      setTimeout(() => {
+        window.open(material.arxiuUrl, '_blank', 'noopener,noreferrer');
+      }, 400);
+    }
+  };
+
+  // Compra d'Escut de Racha Diària
+  const handleBuyStreakProtection = () => {
+    const currentShields = user.streakShieldsCount || 0;
+    if (currentShields >= 3) {
+      alert("Ja tens el màxim de 3 Escuts de Racha acumulats a la teva fitxa policial!");
+      return;
+    }
+
+    const price = 35;
+    if (user.merits < price) {
+      AudioEngine.playWrong();
+      alert(`Et falten ${(price - user.merits).toLocaleString()} Mèrits per adquirir un Escut de Racha.`);
+      return;
+    }
+
+    AudioEngine.playCorrect();
+    if (onBuyStreakShield) {
+      onBuyStreakShield();
+    } else {
+      user.merits = Math.max(0, user.merits - price);
+      user.streakShieldsCount = currentShields + 1;
+    }
+
+    confetti({
+      particleCount: 50,
+      spread: 50,
+      origin: { y: 0.7 }
+    });
+  };
+
+  // Salvar material d'estudi (Admin / Docència)
+  const handleSaveMaterial = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!materialFormData.titol) {
+      alert("Si us plau, indica el títol del document.");
+      return;
+    }
+
+    setIsSavingMaterial(true);
+    try {
+      const updatedMaterial: StudyMaterial = {
+        id: editingMaterial ? editingMaterial.id : `mat_${Date.now()}`,
+        titol: materialFormData.titol || 'Nou Material',
+        descripcio: materialFormData.descripcio || '',
+        format: materialFormData.format || 'pdf',
+        ambit: materialFormData.ambit || 'Àmbit A',
+        temaAssociat: materialFormData.temaAssociat || '',
+        preuMerits: Number(materialFormData.preuMerits) || 0,
+        arxiuUrl: materialFormData.arxiuUrl || '',
+        estat: materialFormData.estat || 'actiu',
+        tamanyText: materialFormData.tamanyText || 'Arxiu d’estudi',
+        dataCreacio: editingMaterial?.dataCreacio || new Date().toISOString().split('T')[0],
+        creadorEmail: user.email
+      };
+
+      let updatedList: StudyMaterial[];
+      if (editingMaterial) {
+        updatedList = studyMaterials.map(m => m.id === editingMaterial.id ? updatedMaterial : m);
+      } else {
+        updatedList = [updatedMaterial, ...studyMaterials];
+      }
+
+      setStudyMaterials(updatedList);
+      await syncSupabaseStudyMaterials(updatedList);
+      setIsMaterialModalOpen(false);
+      setEditingMaterial(null);
+      AudioEngine.playCorrect();
+    } catch (err) {
+      console.error(err);
+      alert("Error guardant material d'estudi.");
+    } finally {
+      setIsSavingMaterial(false);
+    }
+  };
+
+  // Eliminar material d'estudi (Admin / Docència)
+  const handleDeleteMaterial = async (materialId: string) => {
+    if (window.confirm("Vols eliminar aquest material d'estudi del catàleg?")) {
+      const updatedList = studyMaterials.filter(m => m.id !== materialId);
+      setStudyMaterials(updatedList);
+      await syncSupabaseStudyMaterials(updatedList);
+      AudioEngine.playClick();
+    }
+  };
+
+  const handleOpenCreateMaterialModal = () => {
+    setEditingMaterial(null);
+    setMaterialFormData({
+      titol: '',
+      descripcio: '',
+      format: 'pdf',
+      ambit: 'Àmbit A',
+      temaAssociat: '',
+      preuMerits: 25,
+      arxiuUrl: '',
+      estat: 'actiu',
+      tamanyText: '2.5 MB'
+    });
+    setIsMaterialModalOpen(true);
+  };
+
+  const handleOpenEditMaterialModal = (mat: StudyMaterial) => {
+    setEditingMaterial(mat);
+    setMaterialFormData({
+      titol: mat.titol,
+      descripcio: mat.descripcio,
+      format: mat.format,
+      ambit: mat.ambit,
+      temaAssociat: mat.temaAssociat || '',
+      preuMerits: mat.preuMerits,
+      arxiuUrl: mat.arxiuUrl,
+      estat: mat.estat,
+      tamanyText: mat.tamanyText || ''
+    });
+    setIsMaterialModalOpen(true);
+  };
+
+  // Filtrar materials segons permís i pestanya
+  const visibleMaterials = studyMaterials.filter(m => {
+    if (!isDocentOrAdmin && m.estat === 'ocult') return false;
+    if (materialFilter === 'tots') return true;
+    if (materialFilter === 'proximament') return m.estat === 'proximament';
+    if (materialFilter === 'adquirit') return user.purchasedMaterialIds?.includes(m.id);
+    return m.ambit === materialFilter;
+  });
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6">
       {/* Top Banner & Wallet */}
@@ -328,11 +556,11 @@ export const TiendaEscuts: React.FC<TiendaEscutsProps> = ({
                 <ShoppingBag className="w-5 h-5" />
               </span>
               <h2 className="text-xl sm:text-2xl font-black text-white">
-                {isAdmin ? 'Botiga de Mèrits i Distintius Policials' : 'Galeria & Botiga d\'Escuts Policials'} ({shieldsList.length} Unitats)
+                {isAdmin ? 'Botiga de Mèrits, Escuts i Material' : 'Botiga de Mèrits & Recursos d\'Estudi'}
               </h2>
             </div>
             <p className="text-xs sm:text-sm text-slate-400 mt-1 max-w-xl">
-              Canvia els teus Mèrits guanyats en el joc per desbloquejar els distintius oficials de les unitats especialitzades de Mossos d'Esquadra i Policia Local.
+              Canvia els teus Mèrits guanyats en el joc per desbloquejar els distintius oficials, dossiers i esquemes oficials d'estudi de Mossos d'Esquadra.
             </p>
           </div>
 
@@ -350,8 +578,59 @@ export const TiendaEscuts: React.FC<TiendaEscutsProps> = ({
           </div>
         </div>
 
+        {/* SUBPESTANYES PRINCIPALS DE LA BOTIGA */}
+        <div className="flex items-center gap-2 mt-6 border-b border-slate-800 pb-3 overflow-x-auto pretty-scrollbar">
+          <button
+            type="button"
+            onClick={() => {
+              AudioEngine.playClick();
+              setStoreTab('escuts');
+            }}
+            className={`px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-2 transition-all cursor-pointer shrink-0 ${
+              storeTab === 'escuts'
+                ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
+                : 'bg-slate-800/80 hover:bg-slate-800 text-slate-300'
+            }`}
+          >
+            <Shield className="w-4 h-4" />
+            <span>Escuts Policials ({shieldsList.length})</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              AudioEngine.playClick();
+              setStoreTab('material');
+            }}
+            className={`px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-2 transition-all cursor-pointer shrink-0 ${
+              storeTab === 'material'
+                ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
+                : 'bg-slate-800/80 hover:bg-slate-800 text-slate-300'
+            }`}
+          >
+            <BookOpen className="w-4 h-4" />
+            <span>Material d'Estudi & Apunts ({visibleMaterials.length})</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              AudioEngine.playClick();
+              setStoreTab('avantatges');
+            }}
+            className={`px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-2 transition-all cursor-pointer shrink-0 ${
+              storeTab === 'avantatges'
+                ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
+                : 'bg-slate-800/80 hover:bg-slate-800 text-slate-300'
+            }`}
+          >
+            <Zap className="w-4 h-4" />
+            <span>Comodins & Escuts de Racha</span>
+          </button>
+        </div>
+
         {/* Administrator Toolbar */}
-        {isAdmin && (
+        {isAdmin && storeTab === 'escuts' && (
           <div className="mt-5 p-3.5 bg-amber-500/10 border border-amber-500/30 rounded-2xl flex items-center justify-between flex-wrap gap-3">
             <div className="flex items-center gap-2 text-amber-400 text-xs font-bold">
               <ShieldAlert className="w-4 h-4 text-amber-400" />
@@ -379,8 +658,26 @@ export const TiendaEscuts: React.FC<TiendaEscutsProps> = ({
           </div>
         )}
 
-        {/* Highlight Banner for Official TEDAX-NRBQ Patch */}
-        {(() => {
+        {/* Toolbar Admin / Docència per a Material d'Estudi */}
+        {isDocentOrAdmin && storeTab === 'material' && (
+          <div className="mt-5 p-3.5 bg-sky-500/10 border border-sky-500/30 rounded-2xl flex items-center justify-between flex-wrap gap-3">
+            <div className="flex items-center gap-2 text-sky-400 text-xs font-bold">
+              <BookOpen className="w-4 h-4 text-sky-400" />
+              <span>Gestió de Material Docent (Rol: {user.role === 'question_editor' ? 'Docència' : 'Admin'})</span>
+            </div>
+            <button
+              type="button"
+              onClick={handleOpenCreateMaterialModal}
+              className="px-3.5 py-1.5 bg-sky-500 hover:bg-sky-400 text-slate-950 text-xs font-black rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer shadow-md shadow-sky-500/20"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Pujar / Crear Nou Material</span>
+            </button>
+          </div>
+        )}
+
+        {/* PESTANYA 1: ESCUTS - Highlight Banner for Official TEDAX-NRBQ Patch */}
+        {storeTab === 'escuts' && (() => {
           const tedaxShield = shieldsList.find(s => s.id === 'tedax') || shieldsList[0];
           if (!tedaxShield) return null;
           const isTedaxUnlocked = user.unlockedShieldIds?.includes(tedaxShield.id);
@@ -452,274 +749,645 @@ export const TiendaEscuts: React.FC<TiendaEscutsProps> = ({
           );
         })()}
 
-        {/* Guia d'Economia de Mèrits i Comodí 50% */}
-        <div className="mt-5 p-4 bg-slate-950/70 border border-slate-800 rounded-2xl space-y-3">
-          <div className="flex items-center justify-between gap-3 flex-wrap">
-            <div className="flex items-center gap-2 text-xs font-black text-amber-400">
-              <Award className="w-4 h-4" />
-              <span>COM ACONSEGUIR MÈRITS PER DESBLOQUEJAR ESCUTS:</span>
-            </div>
-
-            {/* Comodí 50% Item Quick Buy */}
-            <div className="flex items-center gap-3 bg-slate-900 border border-amber-500/40 px-3.5 py-2 rounded-xl">
-              <div className="flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-amber-400" />
-                <div className="text-xs">
-                  <span className="font-extrabold text-white">Comodí 50%</span>
-                  <span className="text-slate-400 text-[10px] block">Descarta 2 opcions errònies</span>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-mono font-bold text-amber-300">
-                  {user.wildcardsCount || 0} actius
-                </span>
-                {onBuyWildcard && (
-                  <button
-                    onClick={onBuyWildcard}
-                    disabled={user.merits < 10}
-                    className="px-2.5 py-1 bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 font-black rounded-lg text-xs transition-all cursor-pointer shadow-sm"
-                    title="Compra 1 Comodí 50% per 10 Mèrits"
-                  >
-                    Comprar per 10 Mèrits
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
-            <div className="p-2 rounded-xl bg-slate-900 border border-slate-800">
-              <span className="text-slate-400 block font-semibold">⚔️ Victòria vs Agent (45%)</span>
-              <span className="text-amber-300 font-mono font-black">+15 Mèrits</span>
-            </div>
-            <div className="p-2 rounded-xl bg-slate-900 border border-slate-800">
-              <span className="text-slate-400 block font-semibold">⚔️ Victòria vs Caporal (68%)</span>
-              <span className="text-amber-300 font-mono font-black">+25 Mèrits</span>
-            </div>
-            <div className="p-2 rounded-xl bg-slate-900 border border-slate-800">
-              <span className="text-slate-400 block font-semibold">⚔️ Victòria vs Sergent (85%)</span>
-              <span className="text-amber-300 font-mono font-black">+45 Mèrits</span>
-            </div>
-            <div className="p-2 rounded-xl bg-slate-900 border border-slate-800">
-              <span className="text-slate-400 block font-semibold">🎯 Tauler Oca (Casella 50)</span>
-              <span className="text-amber-300 font-mono font-black">+50 Mèrits + Escut Oficial</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Filter buttons */}
-        <div className="flex items-center gap-2 mt-5 flex-wrap">
-          <button
-            onClick={() => setFilterCategory('tots')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors cursor-pointer ${
-              filterCategory === 'tots'
-                ? 'bg-amber-500 text-slate-950'
-                : 'bg-slate-800 text-slate-400 hover:text-white'
-            }`}
-          >
-            Tots els escuts ({shieldsList.length})
-          </button>
-          <button
-            onClick={() => setFilterCategory('campanya')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5 ${
-              filterCategory === 'campanya'
-                ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
-                : 'bg-slate-800 text-amber-300 hover:text-white'
-            }`}
-          >
-            <Trophy className="w-3.5 h-3.5 text-amber-400" />
-            <span>Trofeus de Campanya ({shieldsList.filter(s => Boolean(s.ambitDesbloqueig) || s.id === 'escut_llegenda').length})</span>
-          </button>
-          <button
-            onClick={() => setFilterCategory('desbloquejats')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors cursor-pointer ${
-              filterCategory === 'desbloquejats'
-                ? 'bg-amber-500 text-slate-950'
-                : 'bg-slate-800 text-slate-400 hover:text-white'
-            }`}
-          >
-            Al meu armari ({user.unlockedShieldIds?.length || 0})
-          </button>
-          <button
-            onClick={() => setFilterCategory('tedax')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors cursor-pointer ${
-              filterCategory === 'tedax'
-                ? 'bg-amber-500 text-slate-950'
-                : 'bg-slate-800 text-slate-400 hover:text-white'
-            }`}
-          >
-            TEDAX & NRBQ
-          </button>
-        </div>
-      </div>
-
-      {/* Grid of all shields */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-        {filteredShields.map((shield) => {
-          const isMidpointReached = Boolean(shield.ambitDesbloqueig && user.boardProgress && Number(user.boardProgress[shield.ambitDesbloqueig]) >= 50);
-          const isAmbitDone = Boolean(shield.ambitDesbloqueig && user.completedAmbits?.includes(shield.ambitDesbloqueig));
-          const isC100Reached = Boolean(
-            (shield.id === 'escut_llegenda' || shield.ambitDesbloqueig?.startsWith('Casella 100')) &&
-            ((user.boardProgress && Object.values(user.boardProgress).some(v => Number(v) >= 100)) || (user.completedAmbits && user.completedAmbits.length > 0))
-          );
-
-          const isUnlocked = Boolean(
-            user.unlockedShieldIds?.includes(shield.id) ||
-            isMidpointReached ||
-            isAmbitDone ||
-            isC100Reached
-          );
-          const isEquipped = user.equippedShieldId === shield.id;
-          const canAfford = user.merits >= shield.preuMerits;
-          const isCampaignReward = Boolean(shield.ambitDesbloqueig);
-
-          return (
-            <div
-              key={shield.id}
-              className={`bg-slate-900 border rounded-2xl p-4 sm:p-5 flex flex-col justify-between transition-all relative ${
-                isEquipped
-                  ? 'border-amber-500 ring-2 ring-amber-500/40 shadow-xl shadow-amber-500/10'
-                  : isUnlocked
-                  ? 'border-slate-700/80 hover:border-slate-600'
-                  : isCampaignReward
-                  ? 'border-amber-500/40 bg-gradient-to-b from-slate-900 via-slate-900 to-amber-950/20'
-                  : 'border-slate-800/80 opacity-90'
+        {/* Filter buttons per a escuts */}
+        {storeTab === 'escuts' && (
+          <div className="flex items-center gap-2 mt-5 flex-wrap">
+            <button
+              onClick={() => setFilterCategory('tots')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors cursor-pointer ${
+                filterCategory === 'tots'
+                  ? 'bg-amber-500 text-slate-950'
+                  : 'bg-slate-800 text-slate-400 hover:text-white'
               }`}
             >
-              {/* Badge visual & top status */}
-              <div className="flex flex-col items-center text-center mb-3">
-                {/* Admin Quick Action Button */}
-                {isAdmin && (
-                  <div className="absolute top-3 right-3 flex items-center gap-1 z-10">
+              Tots els escuts ({shieldsList.length})
+            </button>
+            <button
+              onClick={() => setFilterCategory('campanya')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5 ${
+                filterCategory === 'campanya'
+                  ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
+                  : 'bg-slate-800 text-amber-300 hover:text-white'
+              }`}
+            >
+              <Trophy className="w-3.5 h-3.5 text-amber-400" />
+              <span>Trofeus de Campanya ({shieldsList.filter(s => Boolean(s.ambitDesbloqueig) || s.id === 'escut_llegenda').length})</span>
+            </button>
+            <button
+              onClick={() => setFilterCategory('desbloquejats')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors cursor-pointer ${
+                filterCategory === 'desbloquejats'
+                  ? 'bg-amber-500 text-slate-950'
+                  : 'bg-slate-800 text-slate-400 hover:text-white'
+              }`}
+            >
+              Al meu armari ({user.unlockedShieldIds?.length || 0})
+            </button>
+            <button
+              onClick={() => setFilterCategory('tedax')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors cursor-pointer ${
+                filterCategory === 'tedax'
+                  ? 'bg-amber-500 text-slate-950'
+                  : 'bg-slate-800 text-slate-400 hover:text-white'
+              }`}
+            >
+              TEDAX & NRBQ
+            </button>
+          </div>
+        )}
+
+        {/* Filter buttons per a Material d'Estudi */}
+        {storeTab === 'material' && (
+          <div className="flex items-center gap-2 mt-5 flex-wrap">
+            <button
+              onClick={() => setMaterialFilter('tots')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors cursor-pointer ${
+                materialFilter === 'tots' ? 'bg-amber-500 text-slate-950' : 'bg-slate-800 text-slate-400 hover:text-white'
+              }`}
+            >
+              Tots ({studyMaterials.filter(m => isDocentOrAdmin || m.estat !== 'ocult').length})
+            </button>
+            <button
+              onClick={() => setMaterialFilter('Àmbit A')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors cursor-pointer ${
+                materialFilter === 'Àmbit A' ? 'bg-amber-500 text-slate-950' : 'bg-slate-800 text-slate-400 hover:text-white'
+              }`}
+            >
+              Àmbit A
+            </button>
+            <button
+              onClick={() => setMaterialFilter('Àmbit C')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors cursor-pointer ${
+                materialFilter === 'Àmbit C' ? 'bg-amber-500 text-slate-950' : 'bg-slate-800 text-slate-400 hover:text-white'
+              }`}
+            >
+              Àmbit C
+            </button>
+            <button
+              onClick={() => setMaterialFilter('proximament')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors cursor-pointer ${
+                materialFilter === 'proximament' ? 'bg-amber-500 text-slate-950' : 'bg-slate-800 text-slate-400 hover:text-white'
+              }`}
+            >
+              ⏳ Pròximament
+            </button>
+            <button
+              onClick={() => setMaterialFilter('adquirit')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors cursor-pointer ${
+                materialFilter === 'adquirit' ? 'bg-amber-500 text-slate-950' : 'bg-slate-800 text-slate-400 hover:text-white'
+              }`}
+            >
+              Descarregats ({user.purchasedMaterialIds?.length || 0})
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* CONTINGUT SEGONS PESTANYA SELECCIONADA */}
+      {storeTab === 'escuts' && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+          {filteredShields.map((shield) => {
+            const isMidpointReached = Boolean(shield.ambitDesbloqueig && user.boardProgress && Number(user.boardProgress[shield.ambitDesbloqueig]) >= 50);
+            const isAmbitDone = Boolean(shield.ambitDesbloqueig && user.completedAmbits?.includes(shield.ambitDesbloqueig));
+            const isC100Reached = Boolean(
+              (shield.id === 'escut_llegenda' || shield.ambitDesbloqueig?.startsWith('Casella 100')) &&
+              ((user.boardProgress && Object.values(user.boardProgress).some(v => Number(v) >= 100)) || (user.completedAmbits && user.completedAmbits.length > 0))
+            );
+
+            const isUnlocked = Boolean(
+              user.unlockedShieldIds?.includes(shield.id) ||
+              isMidpointReached ||
+              isAmbitDone ||
+              isC100Reached
+            );
+            const isEquipped = user.equippedShieldId === shield.id;
+            const canAfford = user.merits >= shield.preuMerits;
+            const isCampaignReward = Boolean(shield.ambitDesbloqueig);
+
+            return (
+              <div
+                key={shield.id}
+                className={`bg-slate-900 border rounded-3xl p-5 flex flex-col justify-between transition-all hover:scale-[1.02] shadow-lg ${
+                  isEquipped
+                    ? 'border-emerald-500/80 shadow-emerald-500/20 bg-slate-900/90'
+                    : isUnlocked
+                      ? 'border-amber-500/40 hover:border-amber-500'
+                      : 'border-slate-800 opacity-90'
+                }`}
+              >
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-slate-800 text-slate-400">
+                      {shield.unitat || 'Mossos'}
+                    </span>
+                    {isEquipped && (
+                      <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/40">
+                        Equipat
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="flex justify-center my-4 py-2">
+                    {shield.id === 'tedax' && !shield.customLogoUrl ? (
+                      <TedaxBadge size={90} glow={isEquipped} />
+                    ) : (
+                      <ShieldRenderer
+                        shieldId={shield.id}
+                        shieldData={shield}
+                        size={90}
+                        glow={isEquipped}
+                      />
+                    )}
+                  </div>
+
+                  <h3 className="text-base font-black text-white text-center">
+                    {shield.nom}
+                  </h3>
+                  <p className="text-xs text-slate-400 text-center mt-1 leading-snug line-clamp-2">
+                    {shield.descripcio}
+                  </p>
+                </div>
+
+                <div className="pt-3 border-t border-slate-800 mt-2 space-y-2">
+                  {isUnlocked ? (
+                    isEquipped ? (
+                      <button
+                        disabled
+                        className="w-full py-2 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5"
+                      >
+                        <ShieldCheck className="w-3.5 h-3.5" />
+                        <span>Actiu a l'Avatar</span>
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => onEquipShield(shield.id)}
+                        className="w-full py-2 bg-slate-800 hover:bg-slate-700 text-white font-extrabold text-xs rounded-xl border border-slate-600 transition-colors cursor-pointer shadow"
+                      >
+                        Equipar Escut
+                      </button>
+                    )
+                  ) : (shield.id === 'escut_llegenda' || shield.ambitDesbloqueig?.startsWith('Casella 100')) ? (
+                    <div className="w-full p-2.5 bg-amber-950/40 border border-amber-500/60 rounded-xl text-center space-y-1.5">
+                      <div className="flex items-center justify-center gap-1.5 text-xs font-black text-amber-300">
+                        <Lock className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                        <span>BLOQUEJAT A LA BOTIGA</span>
+                      </div>
+                      <p className="text-[10px] text-amber-200/90 leading-tight">
+                        Arriba a la <b>Casella 100</b> del Tauler per desbloquejar aquest escut d'or oficial!
+                      </p>
+                    </div>
+                  ) : isCampaignReward ? (
+                    <div className="w-full p-2.5 bg-red-950/40 border border-red-500/50 rounded-xl text-center space-y-1">
+                      <div className="flex items-center justify-center gap-1.5 text-xs font-black text-red-300">
+                        <Lock className="w-3.5 h-3.5 text-red-400 shrink-0" />
+                        <span>BLOQUEJAT A LA BOTIGA</span>
+                      </div>
+                      <p className="text-[10px] text-red-200/90 leading-tight">
+                        Arriba a la Casella 50 del Tauler de <b>{shield.ambitDesbloqueig}</b> per desbloquejar-lo.
+                      </p>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => handleBuy(shield)}
+                      disabled={!canAfford}
+                      className={`w-full py-2 text-xs font-black rounded-xl flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                        canAfford
+                          ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-md shadow-amber-500/20'
+                          : 'bg-slate-800/60 text-slate-500 border border-slate-800 cursor-not-allowed'
+                      }`}
+                    >
+                      <Coins className="w-3.5 h-3.5" />
+                      <span>{shield.preuMerits.toLocaleString()} Mèrits</span>
+                    </button>
+                  )}
+
+                  {/* Botó edició admin */}
+                  {isAdmin && (
                     <button
                       type="button"
                       onClick={() => handleOpenEditModal(shield)}
-                      className="p-1.5 bg-slate-800 hover:bg-slate-700 text-amber-400 border border-amber-500/40 rounded-lg text-xs transition-colors cursor-pointer shadow"
-                      title="Editar nom, logo, descripció o àmbit"
+                      className="w-full py-1.5 text-[11px] text-amber-400 hover:text-amber-300 font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer bg-amber-500/10 hover:bg-amber-500/20 rounded-xl border border-amber-500/30"
                     >
                       <Edit3 className="w-3.5 h-3.5" />
+                      <span>Editar Escut (Admin)</span>
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteShield(shield.id)}
-                      className="p-1.5 bg-slate-800 hover:bg-red-950 text-slate-400 hover:text-red-400 border border-slate-700 rounded-lg text-xs transition-colors cursor-pointer"
-                      title="Eliminar escut"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                )}
-
-                {/* Campaign Reward Tag */}
-                {isCampaignReward ? (
-                  <div className="mb-2 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-500/20 border border-amber-400/50 text-amber-300 flex items-center gap-1.5 shadow-sm">
-                    {shield.ambitDesbloqueig?.startsWith('Casella 100') ? (
-                      <Crown className="w-3 h-3 text-amber-400 shrink-0" />
-                    ) : (
-                      <Trophy className="w-3 h-3 text-amber-400 shrink-0" />
-                    )}
-                    <span>{shield.ambitDesbloqueig?.startsWith('Casella 100') ? shield.ambitDesbloqueig : `Recompensa ${shield.ambitDesbloqueig}`}</span>
-                  </div>
-                ) : shield.id === 'escut_llegenda' ? (
-                  <div className="mb-2 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-gradient-to-r from-amber-500/30 to-yellow-500/30 border border-amber-400 text-amber-300 flex items-center gap-1.5 shadow-sm">
-                    <Crown className="w-3 h-3 text-amber-400 shrink-0" />
-                    <span>Tauler Oca 100 - Nivell Llegendari</span>
-                  </div>
-                ) : null}
-
-                <div className="relative mb-2">
-                  {shield.escutTipus === 'tedax' && !shield.customLogoUrl ? (
-                    <TedaxBadge size={110} glow={isEquipped} />
-                  ) : (
-                    <ShieldRenderer shieldId={shield.id} shieldData={shield} size={70} glow={isEquipped} />
-                  )}
-
-                  {isEquipped && (
-                    <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-amber-500 text-slate-950 tracking-wider shadow">
-                      EQUIPAT
-                    </span>
                   )}
                 </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
-                <h4 className="text-sm font-extrabold text-white mt-1">{shield.nom}</h4>
-                <span className="text-[11px] font-semibold text-amber-400/90">{shield.unitat}</span>
-                <p className="text-[11px] text-slate-400 mt-1 line-clamp-2 leading-relaxed">
-                  {shield.descripcio}
-                </p>
+      {/* PESTANYA 2: MATERIAL D'ESTUDI / APUNTS */}
+      {storeTab === 'material' && (
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {visibleMaterials.map((mat) => {
+              const isPurchased = Boolean(user.purchasedMaterialIds?.includes(mat.id) || mat.preuMerits === 0);
+              const isComingSoon = mat.estat === 'proximament';
+              const isHidden = mat.estat === 'ocult';
+
+              const formatBadgeColor = 
+                mat.format === 'pdf' ? 'bg-red-500/20 text-red-300 border-red-500/40' :
+                mat.format === 'docx' ? 'bg-blue-500/20 text-blue-300 border-blue-500/40' :
+                mat.format === 'pptx' ? 'bg-orange-500/20 text-orange-300 border-orange-500/40' :
+                'bg-slate-700 text-slate-300 border-slate-600';
+
+              return (
+                <div
+                  key={mat.id}
+                  className={`bg-slate-900 border rounded-3xl p-5 flex flex-col justify-between shadow-xl transition-all ${
+                    isPurchased
+                      ? 'border-emerald-500/40 bg-slate-900/90'
+                      : isComingSoon
+                        ? 'border-amber-500/30 opacity-90'
+                        : 'border-slate-800'
+                  }`}
+                >
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5">
+                        <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full border ${formatBadgeColor}`}>
+                          {mat.format.toUpperCase()}
+                        </span>
+                        <span className="text-[10px] font-bold text-slate-400">
+                          {mat.ambit}
+                        </span>
+                      </div>
+
+                      {/* Status Badges */}
+                      {isComingSoon ? (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                          ⏳ Pròximament
+                        </span>
+                      ) : isHidden ? (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-purple-500/20 text-purple-300 border border-purple-500/40 flex items-center gap-1">
+                          <EyeOff className="w-3 h-3" />
+                          <span>Ocult</span>
+                        </span>
+                      ) : isPurchased ? (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                          ✓ Desbloquejat
+                        </span>
+                      ) : (
+                        <span className="text-xs font-black text-amber-400 flex items-center gap-1">
+                          <Coins className="w-3.5 h-3.5" />
+                          <span>{mat.preuMerits} Mèrits</span>
+                        </span>
+                      )}
+                    </div>
+
+                    <div>
+                      <h3 className="text-sm font-black text-white leading-snug">
+                        {mat.titol}
+                      </h3>
+                      <p className="text-xs text-slate-400 mt-1 line-clamp-3 leading-relaxed">
+                        {mat.descripcio}
+                      </p>
+                    </div>
+
+                    {mat.tamanyText && (
+                      <div className="text-[11px] text-slate-500 flex items-center gap-1">
+                        <FileText className="w-3.5 h-3.5" />
+                        <span>{mat.tamanyText}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Action buttons */}
+                  <div className="pt-4 mt-2 border-t border-slate-800 space-y-2">
+                    {isPurchased ? (
+                      <button
+                        type="button"
+                        onClick={() => handleBuyStudyMaterial(mat)}
+                        className="w-full py-2.5 px-4 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs uppercase tracking-wider rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer shadow-md shadow-emerald-600/20"
+                      >
+                        <Download className="w-4 h-4" />
+                        <span>Descarregar / Obrir Document</span>
+                      </button>
+                    ) : isComingSoon ? (
+                      <button
+                        disabled
+                        className="w-full py-2.5 px-4 bg-slate-800/80 text-amber-300/80 font-bold text-xs uppercase rounded-xl border border-amber-500/20 cursor-not-allowed text-center"
+                      >
+                        Pròximament Disponible
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => handleBuyStudyMaterial(mat)}
+                        disabled={user.merits < mat.preuMerits}
+                        className={`w-full py-2.5 px-4 font-black text-xs uppercase tracking-wider rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                          user.merits >= mat.preuMerits
+                            ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-md shadow-amber-500/25'
+                            : 'bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed'
+                        }`}
+                      >
+                        <Coins className="w-4 h-4" />
+                        <span>Canviar per {mat.preuMerits} Mèrits</span>
+                      </button>
+                    )}
+
+                    {/* Admin / Docència Controls */}
+                    {isDocentOrAdmin && (
+                      <div className="flex items-center gap-2 pt-1">
+                        <button
+                          type="button"
+                          onClick={() => handleOpenEditMaterialModal(mat)}
+                          className="flex-1 py-1.5 text-[11px] font-bold text-sky-400 hover:text-sky-300 bg-sky-500/10 hover:bg-sky-500/20 border border-sky-500/30 rounded-lg transition-colors flex items-center justify-center gap-1 cursor-pointer"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                          <span>Editar</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteMaterial(mat.id)}
+                          className="p-1.5 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors cursor-pointer"
+                          title="Eliminar document"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* PESTANYA 3: AVANTATGES & COMODINS (AMB ESCUT DE RACHA DIÀRIA) */}
+      {storeTab === 'avantatges' && (
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* ITEM 1: ESCUT DE PROTECCIÓ DE RACHA */}
+            <div className="bg-slate-900 border border-amber-500/40 rounded-3xl p-6 shadow-xl space-y-4 flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between">
+                  <div className="w-12 h-12 rounded-2xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-2xl">
+                    🛡️
+                  </div>
+                  <div className="text-right">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase">A l'Inventari</span>
+                    <div className="text-lg font-black text-amber-400">
+                      {user.streakShieldsCount || 0} / 3 Escuts
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-3">
+                  <h3 className="text-lg font-black text-white">
+                    Escut de Racha Diària
+                  </h3>
+                  <p className="text-xs text-slate-300 mt-1 leading-relaxed">
+                    Protegeix la teva racha si un dia no pots connectar-te o fer el repàs diari. Es consumirà automàticament per salvar el teu rècord sense reiniciar-lo!
+                  </p>
+                </div>
               </div>
 
-              {/* Action Buttons: Equip or Buy or Locked */}
-              <div className="pt-3 border-t border-slate-800 mt-2 space-y-2">
-                {isUnlocked ? (
-                  isEquipped ? (
-                    <button
-                      disabled
-                      className="w-full py-2 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5"
-                    >
-                      <ShieldCheck className="w-3.5 h-3.5" />
-                      <span>Actiu a l'Avatar</span>
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => onEquipShield(shield.id)}
-                      className="w-full py-2 bg-slate-800 hover:bg-slate-700 text-white font-extrabold text-xs rounded-xl border border-slate-600 transition-colors cursor-pointer shadow"
-                    >
-                      Equipar Escut
-                    </button>
-                  )
-                ) : (shield.id === 'escut_llegenda' || shield.ambitDesbloqueig?.startsWith('Casella 100')) ? (
-                  <div className="w-full p-2.5 bg-amber-950/40 border border-amber-500/60 rounded-xl text-center space-y-1.5">
-                    <div className="flex items-center justify-center gap-1.5 text-xs font-black text-amber-300">
-                      <Lock className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                      <span>BLOQUEJAT A LA BOTIGA</span>
-                    </div>
-                    <p className="text-[10px] text-amber-200/90 leading-tight">
-                      Arriba a la <b>Casella 100</b> {shield.ambitDesbloqueig ? `de ${shield.ambitDesbloqueig}` : "del Tauler de l'Oca"} per desbloquejar automàticament aquest escut d'or oficial!
-                    </p>
-                  </div>
-                ) : isCampaignReward ? (
-                  <div className="w-full p-2.5 bg-red-950/40 border border-red-500/50 rounded-xl text-center space-y-1">
-                    <div className="flex items-center justify-center gap-1.5 text-xs font-black text-red-300">
-                      <Lock className="w-3.5 h-3.5 text-red-400 shrink-0" />
-                      <span>BLOQUEJAT A LA BOTIGA</span>
-                    </div>
-                    <p className="text-[10px] text-red-200/90 leading-tight">
-                      Arriba a la Casella 50 del Tauler de <b>{shield.ambitDesbloqueig}</b> per desbloquejar aquest escut oficial
-                    </p>
-                  </div>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => handleBuy(shield)}
-                    disabled={!canAfford}
-                    className={`w-full py-2 text-xs font-black rounded-xl flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                      canAfford
-                        ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-md shadow-amber-500/20'
-                        : 'bg-slate-800/60 text-slate-500 border border-slate-800 cursor-not-allowed'
-                    }`}
-                  >
-                    <Coins className="w-3.5 h-3.5" />
-                    <span>{shield.preuMerits.toLocaleString()} Mèrits</span>
-                  </button>
-                )}
-
-                {/* Extra Edit button for Admin inside card */}
-                {isAdmin && (
-                  <button
-                    type="button"
-                    onClick={() => handleOpenEditModal(shield)}
-                    className="w-full py-1.5 text-[11px] text-amber-400 hover:text-amber-300 font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer bg-amber-500/10 hover:bg-amber-500/20 rounded-xl border border-amber-500/30"
-                  >
-                    <Edit3 className="w-3.5 h-3.5" />
-                    <span>Editar Escut (Admin)</span>
-                  </button>
-                )}
+              <div className="pt-3 border-t border-slate-800 space-y-2">
+                <button
+                  type="button"
+                  onClick={handleBuyStreakProtection}
+                  disabled={user.merits < 35 || (user.streakShieldsCount || 0) >= 3}
+                  className={`w-full py-3 px-4 rounded-xl font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                    (user.streakShieldsCount || 0) >= 3
+                      ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                      : user.merits >= 35
+                        ? 'bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 text-slate-950 shadow-lg shadow-amber-500/25'
+                        : 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                  }`}
+                >
+                  <Coins className="w-4 h-4" />
+                  <span>
+                    {(user.streakShieldsCount || 0) >= 3 
+                      ? 'Límit Màxim Assolit (3)' 
+                      : 'Comprar per 35 Mèrits'}
+                  </span>
+                </button>
               </div>
             </div>
-          );
-        })}
-      </div>
+
+            {/* ITEM 2: COMODÍ 50% TÀCTIC */}
+            <div className="bg-slate-900 border border-sky-500/40 rounded-3xl p-6 shadow-xl space-y-4 flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between">
+                  <div className="w-12 h-12 rounded-2xl bg-sky-500/20 border border-sky-500/40 flex items-center justify-center text-2xl">
+                    ⚡
+                  </div>
+                  <div className="text-right">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase">A l'Inventari</span>
+                    <div className="text-lg font-black text-sky-400">
+                      {user.wildcardsCount || 0} Comodins
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-3">
+                  <h3 className="text-lg font-black text-white">
+                    Comodí 50% Tàctic
+                  </h3>
+                  <p className="text-xs text-slate-300 mt-1 leading-relaxed">
+                    Elimina automàticament 2 opcions errònies de qualsevol pregunta al Tauler de l'Oca o als Duels 1v1, facilitant encertar la resposta oficial.
+                  </p>
+                </div>
+              </div>
+
+              <div className="pt-3 border-t border-slate-800 space-y-2">
+                <button
+                  type="button"
+                  onClick={onBuyWildcard}
+                  disabled={user.merits < 10}
+                  className={`w-full py-3 px-4 rounded-xl font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                    user.merits >= 10
+                      ? 'bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 text-white shadow-lg shadow-sky-500/25'
+                      : 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                  }`}
+                >
+                  <Coins className="w-4 h-4" />
+                  <span>Comprar per 10 Mèrits</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* GUIA D'ECONOMIA DE MÈRITS */}
+          <div className="p-5 bg-slate-950/70 border border-slate-800 rounded-2xl space-y-3">
+            <div className="text-xs font-black text-amber-400 uppercase tracking-wider flex items-center gap-2">
+              <Award className="w-4 h-4" />
+              <span>Com guanyar més Mèrits ràpidament:</span>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+              <div className="p-3 bg-slate-900 border border-slate-800 rounded-xl">
+                <div className="text-slate-400 font-semibold">Missió Exprés Diària</div>
+                <div className="text-amber-300 font-black mt-0.5">+50 Mèrits / dia</div>
+              </div>
+              <div className="p-3 bg-slate-900 border border-slate-800 rounded-xl">
+                <div className="text-slate-400 font-semibold">Nivell Or a Camí ISPC</div>
+                <div className="text-amber-300 font-black mt-0.5">Cofre de +50-75 Mèrits</div>
+              </div>
+              <div className="p-3 bg-slate-900 border border-slate-800 rounded-xl">
+                <div className="text-slate-400 font-semibold">Duels 1v1 Policials</div>
+                <div className="text-amber-300 font-black mt-0.5">+15 a +45 Mèrits</div>
+              </div>
+              <div className="p-3 bg-slate-900 border border-slate-800 rounded-xl">
+                <div className="text-slate-400 font-semibold">Casella 50 de l'Oca</div>
+                <div className="text-amber-300 font-black mt-0.5">+50 Mèrits + Escut</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL ADMIN/DOCÈNCIA PER GESTIONAR MATERIAL D'ESTUDI */}
+      {isMaterialModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-slate-900 border border-sky-500/40 rounded-3xl max-w-lg w-full p-6 shadow-2xl space-y-4 my-8">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2">
+                <BookOpen className="w-5 h-5 text-sky-400" />
+                <h3 className="text-base font-black text-white">
+                  {editingMaterial ? 'Editar Material d’Estudi' : 'Pujar / Crear Nou Material'}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsMaterialModalOpen(false)}
+                className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveMaterial} className="space-y-3.5 text-xs">
+              <div>
+                <label className="block text-slate-300 font-bold mb-1">Títol del Document</label>
+                <input
+                  type="text"
+                  required
+                  value={materialFormData.titol}
+                  onChange={(e) => setMaterialFormData({ ...materialFormData, titol: e.target.value })}
+                  placeholder="Ex: Esquema Procediment Penal LECrim 2026"
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-300 font-bold mb-1">Descripció</label>
+                <textarea
+                  rows={2}
+                  value={materialFormData.descripcio}
+                  onChange={(e) => setMaterialFormData({ ...materialFormData, descripcio: e.target.value })}
+                  placeholder="Contingut, punts clau i utilitat per a l'examen..."
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-white"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-300 font-bold mb-1">Format de l'arxiu</label>
+                  <select
+                    value={materialFormData.format}
+                    onChange={(e) => setMaterialFormData({ ...materialFormData, format: e.target.value as any })}
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-white"
+                  >
+                    <option value="pdf">PDF (.pdf)</option>
+                    <option value="docx">Word (.docx)</option>
+                    <option value="pptx">PowerPoint (.pptx)</option>
+                    <option value="txt">Text (.txt)</option>
+                    <option value="link">Enllaç extern</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-slate-300 font-bold mb-1">Àmbit Oficial</label>
+                  <select
+                    value={materialFormData.ambit}
+                    onChange={(e) => setMaterialFormData({ ...materialFormData, ambit: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-white"
+                  >
+                    <option value="Àmbit A">Àmbit A (Entorn)</option>
+                    <option value="Àmbit B">Àmbit B (Institucional)</option>
+                    <option value="Àmbit C">Àmbit C (Seguretat)</option>
+                    <option value="Àmbit D">Àmbit D (Cultura/Actualitat)</option>
+                    <option value="Tots">Transversal / Tots</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-300 font-bold mb-1">Preu en Mèrits (0 = Gratuït)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={materialFormData.preuMerits}
+                    onChange={(e) => setMaterialFormData({ ...materialFormData, preuMerits: Number(e.target.value) })}
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-white font-mono"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-slate-300 font-bold mb-1">Estat de Visibilitat (3 Estats)</label>
+                  <select
+                    value={materialFormData.estat}
+                    onChange={(e) => setMaterialFormData({ ...materialFormData, estat: e.target.value as any })}
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-white font-bold"
+                  >
+                    <option value="actiu">🟢 Actiu (Canjeable per Mèrits)</option>
+                    <option value="proximament">⏳ Pròximament (Visible, compra inactiva)</option>
+                    <option value="ocult">👁️ Ocult (Només Admin / Docència)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-slate-300 font-bold mb-1">URL de descàrrega / visualització</label>
+                <input
+                  type="url"
+                  value={materialFormData.arxiuUrl}
+                  onChange={(e) => setMaterialFormData({ ...materialFormData, arxiuUrl: e.target.value })}
+                  placeholder="https://drive.google.com/... o URL directa de l'arxiu"
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-300 font-bold mb-1">Detall de mida o pàgines</label>
+                <input
+                  type="text"
+                  value={materialFormData.tamanyText}
+                  onChange={(e) => setMaterialFormData({ ...materialFormData, tamanyText: e.target.value })}
+                  placeholder="Ex: 2.8 MB (45 pàgines)"
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-white"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setIsMaterialModalOpen(false)}
+                  className="px-4 py-2 bg-slate-800 text-slate-300 rounded-xl cursor-pointer"
+                >
+                  Cancel·lar
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingMaterial}
+                  className="px-5 py-2 bg-sky-500 hover:bg-sky-400 text-slate-950 font-black rounded-xl cursor-pointer shadow-md shadow-sky-500/20"
+                >
+                  {isSavingMaterial ? 'Desant...' : 'Guardar Material'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+        
 
       {/* Admin Modal for Creating or Editing a Shield */}
       {isModalOpen && (

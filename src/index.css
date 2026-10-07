@@ -1,5 +1,27 @@
 @import "tailwindcss";
 
+:root {
+  --sat: env(safe-area-inset-top, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
+  --sal: env(safe-area-inset-left, 0px);
+  --sar: env(safe-area-inset-right, 0px);
+}
+
+/* iOS Safe Area Padding Utilities for Notch / Dynamic Island / Home Indicator */
+.ios-safe-top {
+  padding-top: max(env(safe-area-inset-top, 0px), 10px);
+}
+
+.ios-safe-bottom {
+  padding-bottom: max(env(safe-area-inset-bottom, 0px), 12px);
+}
+
+/* Prevenir seleccions accidentals i millorar resposta tàctil a iOS/PWA */
+.touch-responsive {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
 /* Amagar completament la barra de scroll mantenint el desplaçament lliscant (swipe, roda, touch) */
 .no-scrollbar::-webkit-scrollbar {
   display: none !important;

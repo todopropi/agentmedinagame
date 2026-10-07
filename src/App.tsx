@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { UserProfile, SpecializedShield, AppSectionConfig, Question } from './types';
+import React, { useState, useEffect, useRef } from 'react';
+import { UserProfile, SpecializedShield, AppSectionConfig, Question, DuelGame, StudyMaterial } from './types';
 import { 
   initAuthListener, 
   logOutUser, 
@@ -10,6 +10,8 @@ import {
   getUnauthorizedDomainAlert,
   subscribeUnauthorizedDomainAlert,
   startOnlinePresence,
+  getDuelsList,
+  subscribeToMyChallenges,
   UnauthorizedDomainInfo
 } from './firebase';
 import { calculateRank } from './data/ranks';
@@ -29,6 +31,7 @@ import {
 import { AuthModal } from './components/AuthModal';
 import { Navbar, ActiveTab } from './components/Navbar';
 import { ModeCampanya } from './components/ModeCampanya';
+import { ModeCamiISPC } from './components/ModeCamiISPC';
 import { ModeDuels } from './components/ModeDuels';
 import { TiendaEscuts } from './components/TiendaEscuts';
 import { SeccioRepas } from './components/SeccioRepas';
@@ -40,11 +43,13 @@ import { ImpugnarModal } from './components/ImpugnarModal';
 import { NotificationsCenterModal } from './components/NotificationsCenterModal';
 import { LegalTermsModal } from './components/LegalTermsModal';
 import { TurnNotificationToast } from './components/TurnNotificationToast';
+import { PendingTurnModal } from './components/PendingTurnModal';
 import { RankUpCelebrationModal } from './components/RankUpCelebrationModal';
 import { InAppNotification, NotificationPreferences } from './types';
-import { requestPushPermissionAndToken, subscribeToUserNotifications } from './utils/pushNotifications';
+import { requestPushPermissionAndToken, subscribeToUserNotifications, showNativePushAlert, fetchUserNotificationsList } from './utils/pushNotifications';
+import { AudioEngine } from './utils/audio';
 import confetti from 'canvas-confetti';
-import { Upload, Sparkles, AlertCircle, Copy, Check, X, ShieldAlert, Megaphone, Flame, ArrowDownCircle, CheckCircle2, TrendingUp } from 'lucide-react';
+import { Upload, Sparkles, AlertCircle, Copy, Check, X, ShieldAlert, Megaphone, Flame, CheckCircle2, TrendingUp } from 'lucide-react';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
@@ -65,7 +70,101 @@ export default function App() {
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [activePushNotification, setActivePushNotification] = useState<InAppNotification | null>(null);
   const [activeBroadcast, setActiveBroadcast] = useState<AdminBroadcastMessage | null>(null);
-  const [xpDecayNotification, setXpDecayNotification] = useState<{ daysMissed: number; xpLost: number } | null>(null);
+  const [selectedDuelMatchId, setSelectedDuelMatchId] = useState<string | null>(null);
+  const [showPendingTurnModal, setShowPendingTurnModal] = useState(false);
+  const [pendingTurnGame, setPendingTurnGame] = useState<DuelGame | null>(null);
+  const [pendingTurnGamesList, setPendingTurnGamesList] = useState<DuelGame[]>([]);
+  const [unreadNotificationsCount, setUnreadNotificationsCount] = useState<number>(0);
+  const [isMinigameActive, setIsMinigameActive] = useState<boolean>(false);
+  const isMinigameActiveRef = useRef<boolean>(false);
+  isMinigameActiveRef.current = isMinigameActive;
+
+  const refreshUnreadCount = async () => {
+    if (!currentUser?.uid) return;
+    try {
+      const list = await fetchUserNotificationsList(currentUser.uid);
+      setUnreadNotificationsCount(list.filter(n => !n.read).length);
+    } catch (e) {}
+  };
+
+  useEffect(() => {
+    if (currentUser?.uid) {
+      refreshUnreadCount();
+    }
+  }, [currentUser?.uid]);
+
+  const queuedPendingTurnGameRef = useRef<DuelGame | null>(null);
+  const queuedPendingTurnTimestampRef = useRef<number | null>(null);
+  const activeTabRef = useRef(activeTab);
+  activeTabRef.current = activeTab;
+
+  // Comprova si un avís d'aquesta partida ja ha estat descartat prèviament per l'usuari
+  const isNoticeDismissed = (matchId: string, noticeTime: number) => {
+    try {
+      if (!currentUser?.uid) return false;
+      const raw = localStorage.getItem(`agent_medina_dismissed_tocs_${currentUser.uid}`);
+      if (!raw) return false;
+      const map = JSON.parse(raw);
+      const dismissedTime = Number(map[matchId]) || 0;
+      return noticeTime <= dismissedTime;
+    } catch (e) {
+      return false;
+    }
+  };
+
+  // Marca l'avís d'aquesta partida com a descartat permanentment (fins que arribi un nou Toc)
+  const markNoticeDismissed = (matchId: string, noticeTime: number) => {
+    try {
+      if (!currentUser?.uid) return;
+      const raw = localStorage.getItem(`agent_medina_dismissed_tocs_${currentUser.uid}`);
+      const map = raw ? JSON.parse(raw) : {};
+      map[matchId] = Math.max(Number(map[matchId]) || 0, noticeTime);
+      localStorage.setItem(`agent_medina_dismissed_tocs_${currentUser.uid}`, JSON.stringify(map));
+    } catch (e) {}
+  };
+
+  // Helper centralitzat per mostrar l'alerta gran en pantalla NOMÉS quan arriba un Toc o avís nou
+  const triggerPendingDuelAlert = (match: DuelGame, noticeTimestamp?: number) => {
+    // 1. Verificacions de seguretat
+    if (!match || match.status !== 'active') return;
+    if (currentUser?.uid && match.currentTurnUid !== currentUser.uid) return;
+
+    // 2. Si aquest avís o toc ja va ser descartat per l'usuari ("Més tard" o "X"), NO tornar a mostrar
+    const effectiveNoticeTime = noticeTimestamp || match.lastTocAt || match.lastUpdated || Date.now();
+    if (isNoticeDismissed(match.id, effectiveNoticeTime)) {
+      return;
+    }
+
+    // 3. Comprovació estricta de jocs: Si està jugant a un minijoc (Candy Crash, Circuit, Torre, contrarellotge...) o a Duels
+    const isBusy = isMinigameActiveRef.current || Boolean((window as any).__IS_MINIGAME_ACTIVE__);
+    if (isBusy || activeTabRef.current === 'duels') {
+      // Deixar en cua perquè NO interrompi el joc cronometrat
+      queuedPendingTurnGameRef.current = match;
+      queuedPendingTurnTimestampRef.current = effectiveNoticeTime;
+    } else {
+      setPendingTurnGame(match);
+      setShowPendingTurnModal(true);
+    }
+  };
+
+  // En acabar el minijoc (o tancar-lo), si hi havia una alerta pendent en cua, mostrar-la immediatament
+  useEffect(() => {
+    const isBusy = isMinigameActive || Boolean((window as any).__IS_MINIGAME_ACTIVE__);
+    if (!isBusy && queuedPendingTurnGameRef.current && activeTab !== 'duels') {
+      const match = queuedPendingTurnGameRef.current;
+      const noticeTime = queuedPendingTurnTimestampRef.current || Date.now();
+      queuedPendingTurnGameRef.current = null;
+      queuedPendingTurnTimestampRef.current = null;
+
+      if (!isNoticeDismissed(match.id, noticeTime)) {
+        const t = setTimeout(() => {
+          setPendingTurnGame(match);
+          setShowPendingTurnModal(true);
+        }, 500);
+        return () => clearTimeout(t);
+      }
+    }
+  }, [isMinigameActive, activeTab]);
 
   // Escolta per instal·lació d'APK directa a Android (beforeinstallprompt)
   useEffect(() => {
@@ -87,9 +186,70 @@ export default function App() {
     // 2. Subscripció en temps real a ordres de torn enviades a Firebase
     const unsubscribe = subscribeToUserNotifications(currentUser.uid, (notif) => {
       setActivePushNotification(notif);
+      setUnreadNotificationsCount(prev => prev + 1);
+      if ((notif.type === 'turn_notification' || notif.type === 'toc_alert') && notif.matchId && !notif.read) {
+        getDuelsList(currentUser.uid).then(list => {
+          const match = list.find(g => g.id === notif.matchId);
+          if (match && match.status === 'active' && match.currentTurnUid === currentUser.uid) {
+            triggerPendingDuelAlert(match, notif.timestamp);
+          }
+        }).catch(console.warn);
+      }
     });
 
-    return unsubscribe;
+    // 3. Subscripció en temps real a duels de Firebase per detectar "Tocs" a l'instant
+    const unsubscribeChallenges = subscribeToMyChallenges(currentUser.uid, (game) => {
+      if (game.status === 'active' && game.currentTurnUid === currentUser.uid) {
+        const isRecentToc = game.lastTocAt && (Date.now() - game.lastTocAt < 60000) && game.lastTocUid !== currentUser.uid;
+        if (isRecentToc) {
+          triggerPendingDuelAlert(game, game.lastTocAt);
+        }
+      }
+    });
+
+    return () => {
+      unsubscribe();
+      unsubscribeChallenges();
+    };
+  }, [currentUser?.uid]);
+
+  // Comprovació periòdica silenciosa de torns pendents (només per al comptador de la icona, MAI obre la modal automàticament)
+  useEffect(() => {
+    if (!currentUser?.uid) return;
+    let isMounted = true;
+
+    const checkPendingDuelTurns = async () => {
+      try {
+        const list = await getDuelsList(currentUser.uid);
+        if (!isMounted) return;
+        const myPending = list.filter(g => g.status === 'active' && g.currentTurnUid === currentUser.uid);
+        setPendingTurnGamesList(myPending);
+
+        // Si hi ha algun Toc pendent enviat pel rival que encara NO hem descartat ("Més tard" o "X"):
+        for (const g of myPending) {
+          if (g.lastTocAt && g.lastTocUid && g.lastTocUid !== currentUser.uid) {
+            if (!isNoticeDismissed(g.id, g.lastTocAt)) {
+              triggerPendingDuelAlert(g, g.lastTocAt);
+              showNativePushAlert(
+                `🚨 TOC D'ATENCIÓ DE ${(g.lastTocFrom || 'Rival').toUpperCase()}!`,
+                `Et toca contestar al vostre duel ara mateix.`,
+                g.id
+              );
+              break;
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('Error checking pending duel turns:', err);
+      }
+    };
+
+    checkPendingDuelTurns();
+    const timer = setInterval(checkPendingDuelTurns, 60000);
+    return () => {
+      isMounted = false;
+      clearInterval(timer);
+    };
   }, [currentUser?.uid]);
 
   // Actualitzar preferències personalitzades de notificacions de l'usuari
@@ -349,61 +509,33 @@ export default function App() {
             console.warn('Error auto-unlocking shields from boardProgress in enrichUser:', e);
           }
         }
-        if (cloudGameData.lastActiveDay) {
-          enriched.lastActiveDay = cloudGameData.lastActiveDay;
-        }
         if (typeof cloudGameData.canViewStudyReport === 'boolean') {
           enriched.canViewStudyReport = cloudGameData.canViewStudyReport;
         }
         if (Array.isArray(cloudGameData.readBroadcastIds)) {
           enriched.readBroadcastIds = cloudGameData.readBroadcastIds;
         }
-      }
-
-      // -------------------------------------------------------------
-      // Mecanisme de Decaïment d'XP per Inactivitat (-20 XP / dia, sòl 0 XP)
-      // -------------------------------------------------------------
-      try {
-        const todayStr = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
-        const lastActive = enriched.lastActiveDay;
-        const decayCheckKey = `agent_medina_decay_${uid}_${todayStr}`;
-        const alreadyCheckedToday = localStorage.getItem(decayCheckKey) === '1' || sessionStorage.getItem(decayCheckKey) === '1';
-
-        // Només calculem decaïment si no s'ha comprovat ja avui i l'usuari tenia un dia anterior registrat
-        if (!alreadyCheckedToday && lastActive && lastActive !== todayStr) {
-          const lastDate = new Date(lastActive + 'T00:00:00');
-          const todayDate = new Date(todayStr + 'T00:00:00');
-          const diffMs = todayDate.getTime() - lastDate.getTime();
-          const diffDays = Math.floor(diffMs / (24 * 60 * 60 * 1000));
-
-          // Si ha estat 1 o més dies naturals sense connectar-se
-          if (diffDays > 0) {
-            const decayPerDay = 20;
-            const potentialLoss = diffDays * decayPerDay;
-            const currentXp = enriched.xp || 0;
-            const actualLoss = Math.min(currentXp, potentialLoss); // Mai baixa de 0 XP
-
-            if (actualLoss > 0) {
-              enriched.xp = Math.max(0, currentXp - actualLoss);
-              // Notificar a l'usuari amb banner
-              setXpDecayNotification({
-                daysMissed: diffDays,
-                xpLost: actualLoss
-              });
-            }
-          }
-          // Marcar comprovat per avui per no repetir en cada recàrrega
-          localStorage.setItem(decayCheckKey, '1');
-          sessionStorage.setItem(decayCheckKey, '1');
-        } else if (lastActive === todayStr) {
-          // L'usuari ja ha estat actiu avui, no hi ha cap pèrdua
-          localStorage.setItem(decayCheckKey, '1');
+        if (cloudGameData.topicMastery && typeof cloudGameData.topicMastery === 'object') {
+          enriched.topicMastery = cloudGameData.topicMastery;
         }
-
-        // Actualitzar el dia actiu a avui
-        enriched.lastActiveDay = todayStr;
-      } catch (decayErr) {
-        console.warn('Error calculant decaïment d\'XP per inactivitat:', decayErr);
+        if (typeof cloudGameData.streakCount === 'number') {
+          enriched.streakCount = cloudGameData.streakCount;
+        }
+        if (cloudGameData.lastStreakDate) {
+          enriched.lastStreakDate = cloudGameData.lastStreakDate;
+        }
+        if (typeof cloudGameData.streakShieldsCount === 'number') {
+          enriched.streakShieldsCount = cloudGameData.streakShieldsCount;
+        }
+        if (cloudGameData.lastDailyMissionDate) {
+          enriched.lastDailyMissionDate = cloudGameData.lastDailyMissionDate;
+        }
+        if (typeof cloudGameData.activeTimeSeconds === 'number') {
+          enriched.activeTimeSeconds = cloudGameData.activeTimeSeconds;
+        }
+        if (Array.isArray(cloudGameData.unlockedMaterialIds)) {
+          enriched.unlockedMaterialIds = cloudGameData.unlockedMaterialIds;
+        }
       }
 
       enriched.rank = calculateRank(enriched.xp);
@@ -450,7 +582,6 @@ export default function App() {
             failedQuestionIds: enriched.failedQuestionIds || [],
             savedQuestionIds: enriched.savedQuestionIds || [],
             savedMnemonicIds: enriched.savedMnemonicIds || [],
-            lastActiveDay: enriched.lastActiveDay,
             readBroadcastIds: enriched.readBroadcastIds || []
           });
         }
@@ -490,7 +621,6 @@ export default function App() {
             failedQuestionIds: enriched.failedQuestionIds || [],
             savedQuestionIds: enriched.savedQuestionIds || [],
             savedMnemonicIds: enriched.savedMnemonicIds || [],
-            lastActiveDay: enriched.lastActiveDay,
             readBroadcastIds: enriched.readBroadcastIds || []
           });
         }
@@ -565,6 +695,52 @@ export default function App() {
       updatedCorrect.push(answeredId);
     }
 
+    // Càlcul de Racha Diària (Mínim 5 preguntes al dia per mantenir o avançar la flama d'estudi)
+    let newStreakCount = currentUser.streakCount || 0;
+    let newLastStreakDate = currentUser.lastStreakDate;
+    let newStreakShields = currentUser.streakShieldsCount || 0;
+    let newDailyCount = currentUser.dailyQuestionsAnsweredCount || 0;
+    let newDailyDate = currentUser.dailyQuestionsAnsweredDate;
+
+    if (answeredId || failedId) {
+      const todayStr = new Date().toISOString().split('T')[0];
+      if (newDailyDate === todayStr) {
+        newDailyCount += 1;
+      } else {
+        newDailyDate = todayStr;
+        newDailyCount = 1;
+      }
+
+      if (newDailyCount >= 5 && newLastStreakDate !== todayStr) {
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        const yesterdayStr = yesterday.toISOString().split('T')[0];
+
+        if (newLastStreakDate === yesterdayStr) {
+          newStreakCount += 1;
+          newLastStreakDate = todayStr;
+          AudioEngine.playStreakBonus();
+          confetti({ particleCount: 50, spread: 60 });
+        } else if (!newLastStreakDate) {
+          newStreakCount = 1;
+          newLastStreakDate = todayStr;
+          AudioEngine.playStreakBonus();
+        } else {
+          // Comprovar si té Escut de Racha per protegir la flama
+          if (newStreakShields > 0) {
+            newStreakShields = Math.max(0, newStreakShields - 1);
+            newStreakCount += 1;
+            newLastStreakDate = todayStr;
+            AudioEngine.playShieldAbsorb();
+            confetti({ particleCount: 40, spread: 50 });
+          } else {
+            newStreakCount = 1;
+            newLastStreakDate = todayStr;
+          }
+        }
+      }
+    }
+
     // Check if user ascended to a new rank
     let finalMerits = newMerits;
     let finalWildcards = currentUser.wildcardsCount || 0;
@@ -604,7 +780,12 @@ export default function App() {
       savedQuestionIds: updatedSaved,
       answeredQuestionIds: updatedAnswered,
       correctQuestionIds: updatedCorrect,
-      questionMistakesCount: currentMistakes
+      questionMistakesCount: currentMistakes,
+      streakCount: newStreakCount,
+      lastStreakDate: newLastStreakDate,
+      streakShieldsCount: newStreakShields,
+      dailyQuestionsAnsweredCount: newDailyCount,
+      dailyQuestionsAnsweredDate: newDailyDate
     };
 
     setCurrentUser(updatedUser);
@@ -635,7 +816,12 @@ export default function App() {
         correctQuestionIds: updatedUser.correctQuestionIds || [],
         questionMistakesCount: updatedUser.questionMistakesCount || {},
         canViewStudyReport: updatedUser.canViewStudyReport || false,
-        savedMnemonicIds: updatedUser.savedMnemonicIds || []
+        savedMnemonicIds: updatedUser.savedMnemonicIds || [],
+        streakCount: newStreakCount,
+        lastStreakDate: newLastStreakDate,
+        streakShieldsCount: newStreakShields,
+        dailyQuestionsAnsweredCount: newDailyCount,
+        dailyQuestionsAnsweredDate: newDailyDate
       })
     ]);
   };
@@ -830,6 +1016,125 @@ export default function App() {
     ]);
   };
 
+  // Comprar Escut de Racha a la Botiga (Màxim 3 escuts de protecció)
+  const handleBuyStreakShield = async () => {
+    if (!currentUser) return;
+    const shieldPrice = 75;
+    if ((currentUser.streakShieldsCount || 0) >= 3) {
+      alert("Ja tens el límit màxim de 3 Escuts de Racha acumulats!");
+      return;
+    }
+    if (currentUser.merits < shieldPrice) {
+      AudioEngine.playWrong();
+      alert(`Et falten ${shieldPrice - currentUser.merits} Mèrits per adquirir un Escut de Racha.`);
+      return;
+    }
+    AudioEngine.playCorrect();
+    const updatedMerits = currentUser.merits - shieldPrice;
+    const updatedCount = (currentUser.streakShieldsCount || 0) + 1;
+    const updatedUser: UserProfile = {
+      ...currentUser,
+      merits: updatedMerits,
+      streakShieldsCount: updatedCount
+    };
+    setCurrentUser(updatedUser);
+    saveStoredLocalUser(updatedUser);
+    await syncUserProfileUpdate(updatedUser);
+    await syncSupabaseUserProgression(currentUser.uid, {
+      merits: updatedMerits,
+      streakShieldsCount: updatedCount
+    });
+    confetti({ particleCount: 50, spread: 60 });
+  };
+
+  // Canjejar / Desbloquejar Material d'Estudi a la Botiga amb Mèrits
+  const handleBuyStudyMaterial = async (material: StudyMaterial) => {
+    if (!currentUser) return;
+    if (currentUser.merits < material.preuMerits) {
+      AudioEngine.playWrong();
+      alert(`Et falten ${material.preuMerits - currentUser.merits} Mèrits per canviar aquest document.`);
+      return;
+    }
+    AudioEngine.playCorrect();
+    const updatedMerits = currentUser.merits - material.preuMerits;
+    const unlocked = Array.from(new Set([...(currentUser.unlockedMaterialIds || []), material.id]));
+    const updatedUser: UserProfile = {
+      ...currentUser,
+      merits: updatedMerits,
+      unlockedMaterialIds: unlocked
+    };
+    setCurrentUser(updatedUser);
+    saveStoredLocalUser(updatedUser);
+    await syncUserProfileUpdate(updatedUser);
+    await syncSupabaseUserProgression(currentUser.uid, {
+      merits: updatedMerits,
+      unlockedMaterialIds: unlocked
+    });
+    confetti({ particleCount: 60, spread: 70 });
+  };
+
+  // Actualitzar Mestratge d'un Tema al nou mòdul "Camí a l'ISPC"
+  const handleUpdateTopicMastery = async (
+    topicId: string, 
+    mastery: number, 
+    correctAnswers: number, 
+    totalQuestions: number
+  ) => {
+    if (!currentUser) return;
+    const currentTopicMastery = { ...(currentUser.topicMastery || {}) };
+    const prev = currentTopicMastery[topicId];
+    
+    currentTopicMastery[topicId] = {
+      topicId,
+      mastery: Math.min(100, Math.max(0, mastery)),
+      lastActivityTimestamp: Date.now(),
+      correctAnswers: (prev?.correctAnswers || 0) + correctAnswers,
+      totalQuestions: (prev?.totalQuestions || 0) + totalQuestions
+    };
+
+    const updatedUser: UserProfile = {
+      ...currentUser,
+      topicMastery: currentTopicMastery
+    };
+    setCurrentUser(updatedUser);
+    saveStoredLocalUser(updatedUser);
+
+    await Promise.all([
+      syncUserProfileUpdate(updatedUser),
+      syncSupabaseUserProgression(currentUser.uid, {
+        topicMastery: currentTopicMastery
+      })
+    ]);
+  };
+
+  // Registre actiu de temps de permanència a l'aplicació (Radiografia de l'Opositor)
+  useEffect(() => {
+    if (!currentUser?.uid) return;
+    let accumulatedSeconds = 0;
+    const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        accumulatedSeconds += 1;
+        // Cada 30 segons d'ús actiu, sincronitzar el comptador
+        if (accumulatedSeconds >= 30) {
+          accumulatedSeconds = 0;
+          setCurrentUser(prev => {
+            if (!prev) return null;
+            const currentTotal = (prev.activeTimeSeconds || 0) + 30;
+            syncSupabaseUserProgression(prev.uid, {
+              activeTimeSeconds: currentTotal
+            }).catch(() => {});
+            return {
+              ...prev,
+              activeTimeSeconds: currentTotal
+            };
+          });
+        }
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [currentUser?.uid]);
+
   if (!authChecked) {
     return (
       <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-white p-4">
@@ -941,12 +1246,40 @@ export default function App() {
         activeTab={activeTab}
         onTabChange={setActiveTab}
         onLogout={handleLogout}
+        pendingDuelCount={pendingTurnGamesList.length}
+        unreadNotificationsCount={unreadNotificationsCount}
         onOpenAdminPanel={() => setShowAdminModal(true)}
         onOpenSubscriptionModal={() => setShowSubscriptionModal(true)}
         onOpenNotificationsModal={() => setShowNotificationsModal(true)}
         onOpenLegalModal={() => setShowLegalModal(true)}
         sectionLabels={sectionConfig as any}
       />
+
+      {/* Modal Gran al Mig de la Pantalla per a Torns de Duel Pendents */}
+      {currentUser && (
+        <PendingTurnModal
+          isOpen={showPendingTurnModal}
+          game={pendingTurnGame}
+          pendingGames={pendingTurnGamesList}
+          currentUser={currentUser}
+          onPlayTurn={(gameId) => {
+            setSelectedDuelMatchId(gameId);
+            setActiveTab('duels');
+            setShowPendingTurnModal(false);
+          }}
+          onDismiss={() => {
+            if (pendingTurnGame) {
+              const effectiveTime = Math.max(
+                pendingTurnGame.lastTocAt || 0,
+                pendingTurnGame.lastUpdated || 0,
+                Date.now()
+              );
+              markNoticeDismissed(pendingTurnGame.id, effectiveTime);
+            }
+            setShowPendingTurnModal(false);
+          }}
+        />
+      )}
 
       {/* Notificació Toast en Temps Real de Torn de Duel o Avançament */}
       <TurnNotificationToast
@@ -955,9 +1288,11 @@ export default function App() {
           if (activePushNotification?.type === 'oca_overtake') {
             setActiveTab('campanya');
           } else {
+            if (matchId) setSelectedDuelMatchId(matchId);
             setActiveTab('duels');
           }
           setActivePushNotification(null);
+          setShowPendingTurnModal(false);
         }}
         onDismiss={() => setActivePushNotification(null)}
       />
@@ -972,6 +1307,17 @@ export default function App() {
             onSaveQuestionToggle={handleToggleSaveQuestion}
             onUnlockShield={handleUnlockShield}
             onUpdateWildcards={handleUpdateWildcards}
+            onMinigameActiveChange={setIsMinigameActive}
+          />
+        )}
+
+        {activeTab === 'cami_ispc' && currentUser && (
+          <ModeCamiISPC
+            user={currentUser}
+            onUpdateUserStats={(xp, merits, failedId, savedId, answeredId, isCorrect) => 
+              handleUpdateStats(xp, merits, failedId, savedId, answeredId, isCorrect)
+            }
+            onUpdateTopicMastery={handleUpdateTopicMastery}
           />
         )}
 
@@ -983,6 +1329,8 @@ export default function App() {
             }
             onSaveQuestionToggle={handleToggleSaveQuestion}
             onUpdateWildcards={handleUpdateWildcards}
+            initialMatchId={selectedDuelMatchId}
+            onClearInitialMatchId={() => setSelectedDuelMatchId(null)}
           />
         )}
 
@@ -992,6 +1340,8 @@ export default function App() {
             onEquipShield={handleEquipShield}
             onBuyShield={handleBuyShield}
             onBuyWildcard={handleBuyWildcard}
+            onBuyStreakShield={handleBuyStreakShield}
+            onBuyStudyMaterial={handleBuyStudyMaterial}
           />
         )}
 
@@ -1065,14 +1415,27 @@ export default function App() {
         currentUser={currentUser}
       />
 
-      {/* Modal de Configuració de Notificacions Personals */}
+      {/* Modal de Configuració i Llistat de Notificacions Personals */}
       {currentUser && (
         <NotificationsCenterModal
           user={currentUser}
           isOpen={showNotificationsModal}
-          onClose={() => setShowNotificationsModal(false)}
+          onClose={() => {
+            setShowNotificationsModal(false);
+            refreshUnreadCount();
+          }}
           onUpdatePreferences={handleUpdateNotificationPreferences}
           deferredPrompt={deferredPrompt}
+          onNotificationsCountChange={setUnreadNotificationsCount}
+          onOpenDuelMatch={(matchId) => {
+            setSelectedDuelMatchId(matchId);
+            setActiveTab('duels');
+            setShowNotificationsModal(false);
+          }}
+          onNavigateToCampanya={() => {
+            setActiveTab('campanya');
+            setShowNotificationsModal(false);
+          }}
         />
       )}
 
@@ -1120,34 +1483,6 @@ export default function App() {
             className="text-slate-400 hover:text-white p-1"
           >
             <X className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      )}
-
-      {/* =========================================================================
-          AVÍS DE DECAÏMENT D'XP PER INACTIVITAT (-20 XP per dia sense connectar-se)
-         ========================================================================= */}
-      {xpDecayNotification && (
-        <div className="fixed bottom-6 right-4 sm:right-6 z-50 max-w-sm p-4 bg-slate-900 border border-amber-500/50 rounded-2xl shadow-2xl flex items-start gap-3 animate-in slide-in-from-bottom duration-300">
-          <div className="p-2 rounded-xl bg-amber-500/20 text-amber-400 shrink-0">
-            <ArrowDownCircle className="w-5 h-5" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <h5 className="font-bold text-xs text-amber-300 flex items-center gap-1.5">
-              <span>Resta per Inactivitat</span>
-              <span className="text-[10px] font-black px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-200">
-                -{xpDecayNotification.xpLost} XP
-              </span>
-            </h5>
-            <p className="text-[11px] text-slate-300 mt-0.5 leading-relaxed">
-              Has estat <strong className="text-white">{xpDecayNotification.daysMissed} {xpDecayNotification.daysMissed === 1 ? 'dia' : 'dies'}</strong> sense connectar-te (-20 XP/dia). Repassa avui per recuperar punts i no baixar de rang!
-            </p>
-          </div>
-          <button
-            onClick={() => setXpDecayNotification(null)}
-            className="text-slate-400 hover:text-white p-1"
-          >
-            <X className="w-4 h-4" />
           </button>
         </div>
       )}

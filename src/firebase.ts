@@ -23,6 +23,7 @@ import {
   limit, 
   getDocs, 
   onSnapshot,
+  deleteDoc,
   Firestore
 } from 'firebase/firestore';
 import { UserProfile, DuelGame, HeadToHeadRecord } from './types';
@@ -288,10 +289,6 @@ export function initAuthListener(callback: (user: UserProfile | null) => void): 
             const snap = await getDoc(doc(db, 'users', fbUser.uid));
             if (snap.exists()) {
               const prof = snap.data() as UserProfile;
-              const localStored = getStoredLocalUser(fbUser.uid);
-              if (localStored?.lastActiveDay) {
-                prof.lastActiveDay = localStored.lastActiveDay;
-              }
               saveStoredLocalUser(prof);
               callback(prof);
               return;
@@ -565,6 +562,9 @@ export function deleteLocalDuelGame(gameId: string, userUid: string) {
       const filtered = list.filter(g => g.id !== gameId);
       localStorage.setItem(LOCAL_GAMES_PREFIX + userUid, JSON.stringify(filtered));
     }
+    if (isFirebaseConfigured && db && gameId) {
+      deleteDoc(doc(db, 'games', gameId)).catch(() => {});
+    }
   } catch (e) {}
 }
 
@@ -578,7 +578,8 @@ export async function getAllRegisteredUsers(currentUserUid?: string): Promise<Us
       snap.forEach(d => {
         const u = d.data() as UserProfile;
         if (u && u.uid) {
-          const isOnline = u.lastLogin ? Date.now() - u.lastLogin < 5 * 60 * 1000 : false;
+          const lastActiveTime = u.lastActive || u.lastLogin;
+          const isOnline = Boolean(u.isOnline) && Boolean(lastActiveTime && Date.now() - lastActiveTime < 5 * 60 * 1000);
           usersMap.set(u.uid, { ...u, isOnline });
         }
       });
@@ -594,9 +595,11 @@ export async function getAllRegisteredUsers(currentUserUid?: string): Promise<Us
         const parsed: UserProfile[] = JSON.parse(raw);
         for (const u of parsed) {
           if (u && u.uid) {
+            const lastActiveTime = u.lastActive || u.lastLogin;
+            const isOnline = Boolean(u.isOnline) && Boolean(lastActiveTime && Date.now() - lastActiveTime < 5 * 60 * 1000);
             usersMap.set(u.uid, {
               ...u,
-              isOnline: u.lastLogin ? Date.now() - u.lastLogin < 5 * 60 * 1000 : false
+              isOnline
             });
           }
         }
@@ -701,28 +704,54 @@ export function startOnlinePresence(uid: string): () => void {
 
   const updatePresence = async () => {
     try {
-      await updateDoc(doc(db, 'users', uid), { lastLogin: Date.now() });
+      await updateDoc(doc(db, 'users', uid), { 
+        lastLogin: Date.now(),
+        lastActive: Date.now(),
+        isOnline: true
+      });
     } catch (e) {}
   };
 
   updatePresence();
   const intervalId = setInterval(updatePresence, 2 * 60 * 1000);
-  return () => clearInterval(intervalId);
+  return () => {
+    clearInterval(intervalId);
+    try {
+      updateDoc(doc(db, 'users', uid), { 
+        isOnline: false,
+        lastActive: Date.now()
+      }).catch(() => {});
+    } catch (e) {}
+  };
 }
 
 export function subscribeToMyChallenges(currentUserUid: string, onChallengeReceived: (game: DuelGame) => void): () => void {
   if (!isFirebaseConfigured || !db || !currentUserUid) return () => {};
 
-  const q = query(collection(db, 'games'), limit(50));
+  try {
+    const q = query(collection(db, 'games'), limit(50));
 
-  return onSnapshot(q, (snapshot) => {
-    snapshot.docChanges().forEach((change) => {
-      if (change.type === "added" || change.type === "modified") {
-        const game = change.doc.data() as DuelGame;
-        if (game.guestPlayerUid === currentUserUid && (game.status === 'waiting' || game.status === 'active')) {
-          onChallengeReceived(game);
-        }
+    return onSnapshot(
+      q,
+      (snapshot) => {
+        snapshot.docChanges().forEach((change) => {
+          if (change.type === "added" || change.type === "modified") {
+            const game = change.doc.data() as DuelGame;
+            const isParticipant = game.guestPlayerUid === currentUserUid || game.hostPlayerUid === currentUserUid;
+            const isActive = game.status === 'active';
+            const isMyTurn = game.currentTurnUid === currentUserUid;
+            if (isParticipant && isActive && isMyTurn) {
+              onChallengeReceived(game);
+            }
+          }
+        });
+      },
+      (error) => {
+        // Capturar de manera segura si Firestore no permet escoltar la col·lecció 'games' directament per regles de seguretat
+        // Els avisos en temps real es continuen rebent mitjançant FCM, SSE i users/{uid}/notifications
       }
-    });
-  });
+    );
+  } catch (e) {
+    return () => {};
+  }
 }

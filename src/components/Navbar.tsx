@@ -26,12 +26,13 @@ import {
   Bell,
   BarChart2,
   Compass,
+  Flame,
   X
 } from 'lucide-react';
 import { STORE_UNITS_LIST } from '../data/badges';
 import { QUESTIONS_BANK } from '../data/questionsBank';
 
-export type ActiveTab = 'campanya' | 'duels' | 'tienda' | 'repas' | 'ranking';
+export type ActiveTab = 'campanya' | 'cami_ispc' | 'duels' | 'tienda' | 'repas' | 'ranking';
 
 interface NavbarProps {
   user: UserProfile;
@@ -39,6 +40,7 @@ interface NavbarProps {
   onTabChange: (tab: ActiveTab) => void;
   onLogout: () => void;
   pendingDuelCount?: number;
+  unreadNotificationsCount?: number;
   onOpenAdminPanel?: () => void;
   onOpenSubscriptionModal?: () => void;
   onOpenNotificationsModal?: () => void;
@@ -52,6 +54,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onTabChange, 
   onLogout,
   pendingDuelCount = 0,
+  unreadNotificationsCount = 0,
   onOpenAdminPanel,
   onOpenSubscriptionModal,
   onOpenNotificationsModal,
@@ -168,7 +171,10 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   return (
     <>
-      <header className="sticky top-0 z-40 bg-slate-950/95 backdrop-blur-md border-b border-slate-800/90 shadow-xl">
+      <header 
+        className="sticky top-0 z-50 bg-slate-950/95 backdrop-blur-md border-b border-slate-800/90 shadow-xl ios-safe-top"
+        style={{ paddingTop: 'max(env(safe-area-inset-top, 0px), 0.35rem)' }}
+      >
         {/* Top Bar: Brand, Stats & Profile */}
         <div className="max-w-7xl mx-auto px-3 sm:px-6 py-2 flex items-center justify-between gap-2 sm:gap-4">
           {/* MOBILE VIEW: Ultra-clean, modern and un-crowded top bar */}
@@ -180,7 +186,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 onTabChange('campanya');
               }}
               title="MEED - Cos d'Opositors CME"
-              className="flex items-center gap-2 cursor-pointer active:scale-95 transition-transform"
+              className="flex items-center gap-2 cursor-pointer active:scale-95 transition-transform touch-manipulation"
             >
               <OfficialEmblem size={34} glow={false} />
               <div className="flex flex-col leading-tight">
@@ -193,8 +199,17 @@ export const Navbar: React.FC<NavbarProps> = ({
               </div>
             </div>
 
-            {/* Right: Mèrits Chip + Notificacions + User Avatar */}
-            <div className="flex items-center gap-2">
+            {/* Right: Racha + Mèrits Chip + Notificacions + User Avatar */}
+            <div className="flex items-center gap-1.5 sm:gap-2">
+              {/* Racha Flama Diària */}
+              <div 
+                title={`Racha diària: ${user.streakCount || 0} dies consecutius (Mínim 5 preguntes/dia)`}
+                className="flex items-center gap-1 px-2 py-1 bg-amber-950/30 border border-amber-500/30 rounded-full text-amber-400 text-xs font-black shadow-sm"
+              >
+                <Flame className="w-3.5 h-3.5 text-amber-500 animate-pulse" />
+                <span>{user.streakCount || 0}</span>
+              </div>
+
               {/* Mèrits Pill */}
               <button 
                 type="button"
@@ -203,7 +218,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   onTabChange('tienda');
                 }}
                 title="Mèrits acumulats - Fes clic per anar a la botiga"
-                className="flex items-center gap-1.5 px-2.5 py-1 bg-amber-950/40 border border-amber-500/40 rounded-full cursor-pointer hover:bg-amber-900/40 transition-all active:scale-95 shadow-sm"
+                className="flex items-center gap-1 px-2 py-1 bg-amber-950/40 border border-amber-500/40 rounded-full cursor-pointer hover:bg-amber-900/40 transition-all active:scale-95 shadow-sm touch-manipulation"
               >
                 <Coins className="w-3.5 h-3.5 text-amber-400" />
                 <span className="text-xs font-black text-amber-300">
@@ -219,10 +234,15 @@ export const Navbar: React.FC<NavbarProps> = ({
                     AudioEngine.playClick();
                     onOpenNotificationsModal();
                   }}
-                  title="Configurar Notificacions"
-                  className="p-1.5 rounded-full bg-slate-900 border border-slate-700/80 text-amber-400 hover:text-white flex items-center justify-center shrink-0 active:scale-95"
+                  title="Centre de Notificacions"
+                  className="relative p-2 rounded-full bg-slate-900 border border-slate-700/80 text-amber-400 hover:text-white flex items-center justify-center shrink-0 active:scale-95 touch-manipulation cursor-pointer"
                 >
                   <Bell className="w-4 h-4" />
+                  {unreadNotificationsCount > 0 && (
+                    <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-red-500 text-white font-black text-[9px] flex items-center justify-center shadow-sm animate-pulse border border-slate-900">
+                      {unreadNotificationsCount > 9 ? '9+' : unreadNotificationsCount}
+                    </span>
+                  )}
                 </button>
               )}
 
@@ -234,7 +254,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   setIsProfileModalOpen(true);
                 }}
                 title="El meu Perfil - Rang, Escut, Subscripció i Ajustos"
-                className="relative p-0.5 rounded-full border-2 border-amber-500 hover:border-amber-400 transition-all shrink-0 cursor-pointer active:scale-95 focus:outline-none shadow-md shadow-amber-500/20"
+                className="relative p-0.5 rounded-full border-2 border-amber-500 hover:border-amber-400 transition-all shrink-0 cursor-pointer active:scale-95 focus:outline-none shadow-md shadow-amber-500/20 touch-manipulation min-w-[36px] min-h-[36px] flex items-center justify-center"
               >
                 {user.photoURL ? (
                   <img 
@@ -382,10 +402,15 @@ export const Navbar: React.FC<NavbarProps> = ({
                     onOpenNotificationsModal();
                   }}
                   title="Configurar Notificacions (Duels i Avançaments a l'Oca)"
-                  className="px-2.5 py-1.5 bg-slate-900 hover:bg-slate-850 text-amber-300 border border-amber-500/30 hover:border-amber-500/50 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer shadow-sm shadow-amber-500/10 active:scale-95"
+                  className="px-2.5 py-1.5 bg-slate-900 hover:bg-slate-850 text-amber-300 border border-amber-500/30 hover:border-amber-500/50 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer shadow-sm shadow-amber-500/10 active:scale-95 relative"
                 >
                   <Bell className="w-3.5 h-3.5 text-amber-400" />
                   <span className="hidden xl:inline">NOTIFICACIONS</span>
+                  {unreadNotificationsCount > 0 && (
+                    <span className="px-1.5 py-0.2 rounded-full bg-red-500 text-white font-black text-[10px] animate-pulse">
+                      {unreadNotificationsCount}
+                    </span>
+                  )}
                 </button>
               )}
 
@@ -502,6 +527,21 @@ export const Navbar: React.FC<NavbarProps> = ({
             >
               <Dice5 className="w-4 h-4 shrink-0" />
               <span>{dbNavTexts?.campanya || sectionLabels?.campanya || '🎲 Oca 50'}</span>
+            </button>
+
+            <button
+              onClick={() => {
+                AudioEngine.playClick();
+                onTabChange('cami_ispc');
+              }}
+              className={`shrink-0 flex items-center gap-1.5 sm:gap-2 py-2.5 sm:py-3 px-3 sm:px-4 border-b-2 font-black text-xs sm:text-sm tracking-wide transition-colors whitespace-nowrap cursor-pointer ${
+                activeTab === 'cami_ispc'
+                  ? 'border-emerald-500 text-emerald-400 bg-emerald-500/10'
+                  : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-800/40'
+              }`}
+            >
+              <Compass className="w-4 h-4 shrink-0" />
+              <span>{dbNavTexts?.cami_ispc || sectionLabels?.cami_ispc || "🏔️ Camí a l'ISPC"}</span>
             </button>
 
             <button
@@ -736,6 +776,43 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </div>
                 <div className="text-sm font-black text-white mt-0.5">
                   {user.wildcardsCount || 0} disponibles
+                </div>
+              </div>
+            </div>
+
+            {/* Card 4: Racha Diària & Escuts de Racha */}
+            <div className="grid grid-cols-2 gap-2 text-left">
+              <div className="p-2.5 bg-amber-950/25 border border-amber-500/30 rounded-xl">
+                <div className="flex items-center gap-1.5 text-amber-400">
+                  <Flame className="w-3.5 h-3.5 text-amber-500 animate-pulse" />
+                  <span className="text-[10px] font-bold uppercase">Racha d'Estudi</span>
+                </div>
+                <div className="text-sm font-black text-amber-300 mt-0.5 flex items-center gap-1">
+                  <span>{user.streakCount || 0}</span>
+                  <span className="text-[11px] font-bold text-slate-400">dies</span>
+                </div>
+                <div className="text-[9px] text-slate-500 mt-0.5">
+                  Mín. 5 preguntes/dia
+                </div>
+              </div>
+
+              <div 
+                onClick={() => {
+                  AudioEngine.playClick();
+                  setIsProfileModalOpen(false);
+                  onTabChange('tienda');
+                }}
+                className="p-2.5 bg-slate-950/70 border border-slate-800 hover:border-amber-500/40 rounded-xl cursor-pointer transition-colors"
+              >
+                <div className="flex items-center gap-1.5 text-sky-400">
+                  <span className="text-xs">🛡️</span>
+                  <span className="text-[10px] font-bold uppercase">Escuts Racha</span>
+                </div>
+                <div className="text-sm font-black text-white mt-0.5">
+                  {user.streakShieldsCount || 0} / 3
+                </div>
+                <div className="text-[9px] text-amber-400 hover:underline mt-0.5">
+                  Comprar a la botiga
                 </div>
               </div>
             </div>

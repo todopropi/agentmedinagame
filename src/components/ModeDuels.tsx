@@ -19,7 +19,8 @@ import {
   forfeitMatchInSupabase,
   syncSupabaseProfile,
   deleteMatchInSupabase,
-  fetchFinishedMatchesHistory
+  fetchFinishedMatchesHistory,
+  supabase
 } from '../../supabase';
 import { calculateRank } from '../data/ranks';
 import { EscutMossosStripes } from './EscutMossosStripes';
@@ -55,7 +56,9 @@ import {
   Flag,
   Trash2,
   RefreshCw,
-  Calendar
+  Calendar,
+  Zap,
+  AlertTriangle
 } from 'lucide-react';
 
 interface ModeDuelsProps {
@@ -70,6 +73,8 @@ interface ModeDuelsProps {
   ) => void;
   onSaveQuestionToggle: (questionId: string) => void;
   onUpdateWildcards?: (delta: number) => void;
+  initialMatchId?: string | null;
+  onClearInitialMatchId?: () => void;
 }
 
 export type BotDifficulty = 'agent' | 'caporal' | 'sergent' | 'aspirant';
@@ -154,7 +159,9 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
   user,
   onUpdateUserStats,
   onSaveQuestionToggle,
-  onUpdateWildcards
+  onUpdateWildcards,
+  initialMatchId,
+  onClearInitialMatchId
 }) => {
   const [activeGame, setActiveGame] = useState<DuelGame | null>(null);
   const [gameList, setGameList] = useState<DuelGame[]>([]);
@@ -167,11 +174,12 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
   const [newRivalAlias, setNewRivalAlias] = useState('');
   const [showTurnPassedModal, setShowTurnPassedModal] = useState(false);
   const [joinCodeInput, setJoinCodeInput] = useState('');
+  const [inactivityVictoryAlert, setInactivityVictoryAlert] = useState<string | null>(null);
 
   // Registered & Online Users Directory State
   const [registeredUsers, setRegisteredUsers] = useState<UserProfile[]>([]);
   const [userSearchTerm, setUserSearchTerm] = useState('');
-  const [userFilterTab, setUserFilterTab] = useState<'all' | 'online'>('all');
+  const [userFilterTab, setUserFilterTab] = useState<'all' | 'fast' | 'online'>('all');
   const [isChallengingUser, setIsChallengingUser] = useState<string | null>(null);
 
   // Wheel View State
@@ -212,6 +220,17 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
       }, 80);
     }
   }, [activeGame?.id]);
+
+  // Auto-seleccionar partida inicial quan es passa des de la notificació gran de torn
+  useEffect(() => {
+    if (initialMatchId && gameList.length > 0) {
+      const match = gameList.find(g => g.id === initialMatchId || g.shareCode.toUpperCase() === initialMatchId.toUpperCase());
+      if (match) {
+        setActiveGame(match);
+        if (onClearInitialMatchId) onClearInitialMatchId();
+      }
+    }
+  }, [initialMatchId, gameList, onClearInitialMatchId]);
 
   // Sub-pestanyes de duels: 'my_duels', 'h2h' (Cara a Cara) o 'history' (Resultats Individuals Supabase)
   const [activeDuelTab, setActiveDuelTab] = useState<'my_duels' | 'h2h' | 'history'>('my_duels');
@@ -286,7 +305,9 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
           failedQuestionIds: [],
           savedQuestionIds: [],
           photoURL: sp.avatar_url || existing?.photoURL,
-          isOnline: true
+          lastLogin: existing?.lastLogin || (sp.updated_at ? new Date(sp.updated_at).getTime() : undefined),
+          lastActive: existing?.lastActive || existing?.lastLogin || (sp.updated_at ? new Date(sp.updated_at).getTime() : undefined),
+          isOnline: Boolean(existing?.isOnline && (Date.now() - (existing.lastActive || existing.lastLogin || 0) < 5 * 60 * 1000))
         });
       }
     }
@@ -340,30 +361,72 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
           if (typeof m.state?.score_p2 === 'number') existing.guestRedStripes = m.state.score_p2;
           if (m.updated_at) existing.lastUpdated = new Date(m.updated_at).getTime();
         } else {
-          gamesMap.set(matchId, {
-            id: matchId,
-            hostPlayerUid: m.player1_id,
-            hostPlayerName: hostName,
-            hostPlayerAvatar: hostProfile?.photoURL,
-            hostPlayerShieldId: m.state?.hostPlayerShieldId || 'escut_basico',
-            hostRedStripes: typeof m.score_p1 === 'number' ? m.score_p1 : 0,
-            guestPlayerUid: m.player2_id,
-            guestPlayerName: guestName,
-            guestPlayerAvatar: guestProfile?.photoURL,
-            guestPlayerShieldId: m.state?.guestPlayerShieldId || 'escut_basico',
-            guestRedStripes: typeof m.state?.score_p2 === 'number' ? m.state.score_p2 : 0,
-            currentTurnUid: m.current_turn || m.player1_id,
-            status: m.status === 'finished' ? 'finished' : 'active',
-            consecutiveCorrect: m.state?.consecutiveCorrect || { [m.player1_id]: 0, [m.player2_id]: 0 },
-            lastUpdated: m.updated_at ? new Date(m.updated_at).getTime() : Date.now(),
-            shareCode: m.state?.shareCode || matchId.substring(0, 6).toUpperCase()
-          });
+          // Comprovar si ja tenim una partida en gamesMap amb aquests mateixos dos jugadors actius
+          let duplicateMatchId: string | null = null;
+          if (m.status !== 'finished') {
+            for (const [existingId, g] of gamesMap.entries()) {
+              const sameOpponents = 
+                (g.hostPlayerUid === m.player1_id && g.guestPlayerUid === m.player2_id) ||
+                (g.hostPlayerUid === m.player2_id && g.guestPlayerUid === m.player1_id);
+              if (sameOpponents && g.status === 'active') {
+                duplicateMatchId = existingId;
+                break;
+              }
+            }
+          }
+
+          if (duplicateMatchId) {
+            const existingG = gamesMap.get(duplicateMatchId)!;
+            if (m.current_turn) existingG.currentTurnUid = m.current_turn;
+            if (typeof m.score_p1 === 'number') existingG.hostRedStripes = Math.max(existingG.hostRedStripes, m.score_p1);
+            if (typeof m.state?.score_p2 === 'number') existingG.guestRedStripes = Math.max(existingG.guestRedStripes, m.state.score_p2);
+          } else {
+            gamesMap.set(matchId, {
+              id: matchId,
+              hostPlayerUid: m.player1_id,
+              hostPlayerName: hostName,
+              hostPlayerAvatar: hostProfile?.photoURL,
+              hostPlayerShieldId: m.state?.hostPlayerShieldId || 'escut_basico',
+              hostRedStripes: typeof m.score_p1 === 'number' ? m.score_p1 : 0,
+              guestPlayerUid: m.player2_id,
+              guestPlayerName: guestName,
+              guestPlayerAvatar: guestProfile?.photoURL,
+              guestPlayerShieldId: m.state?.guestPlayerShieldId || 'escut_basico',
+              guestRedStripes: typeof m.state?.score_p2 === 'number' ? m.state.score_p2 : 0,
+              currentTurnUid: m.current_turn || m.player1_id,
+              status: m.status === 'finished' ? 'finished' : 'active',
+              consecutiveCorrect: m.state?.consecutiveCorrect || { [m.player1_id]: 0, [m.player2_id]: 0 },
+              lastUpdated: m.updated_at ? new Date(m.updated_at).getTime() : Date.now(),
+              shareCode: m.state?.shareCode || matchId.substring(0, 6).toUpperCase()
+            });
+          }
         }
       }
     }
 
-    const mergedGames = Array.from(gamesMap.values()).sort((a, b) => (b.lastUpdated || 0) - (a.lastUpdated || 0));
-    setGameList(mergedGames);
+    // Filtrar i netejar qualsevol duplicat actiu restant entre els mateixos opositors
+    const activePairSeen = new Set<string>();
+    const cleanedGames: DuelGame[] = [];
+    const duplicatesToRemove: string[] = [];
+
+    const sortedAll = Array.from(gamesMap.values()).sort((a, b) => (b.lastUpdated || 0) - (a.lastUpdated || 0));
+    for (const g of sortedAll) {
+      if (g.status === 'active' && g.guestPlayerUid) {
+        const pairKey = [g.hostPlayerUid, g.guestPlayerUid].sort().join('_vs_');
+        if (activePairSeen.has(pairKey)) {
+          duplicatesToRemove.push(g.id);
+          continue;
+        }
+        activePairSeen.add(pairKey);
+      }
+      cleanedGames.push(g);
+    }
+
+    if (duplicatesToRemove.length > 0) {
+      duplicatesToRemove.forEach(dupId => deleteLocalDuelGame(dupId, user.uid));
+    }
+
+    setGameList(cleanedGames);
 
     // Keep activeGame synchronized if its state changed in Supabase
     setActiveGame(prev => {
@@ -781,6 +844,57 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
     await loadDuelsData();
   };
 
+  // Reclamar victòria per inactivitat del rival (+1 setmana sense respondre)
+  const handleClaimInactivityVictory = async (e: React.MouseEvent | null, game: DuelGame) => {
+    if (e) e.stopPropagation();
+    const isHost = game.hostPlayerUid === user.uid;
+    const rivalName = isHost ? (game.guestPlayerName || 'Aspirant Opositor') : game.hostPlayerName;
+
+    AudioEngine.playVictory();
+    confetti({
+      particleCount: 160,
+      spread: 100,
+      origin: { y: 0.5 }
+    });
+
+    const finishedGame: DuelGame = {
+      ...game,
+      status: 'finished',
+      winnerUid: user.uid,
+      lastUpdated: Date.now()
+    };
+
+    // Premi per victòria completa
+    onUpdateUserStats(250, 30);
+
+    // Sincronitzar a Supabase
+    await updateMatchTurnInSupabase({
+      matchId: game.id,
+      currentTurn: user.uid,
+      scoreP1: isHost ? 4 : game.hostRedStripes,
+      state: {
+        score_p2: !isHost ? 4 : game.guestRedStripes,
+        winnerUid: user.uid,
+        winnerName: user.displayName,
+        forfeitReason: 'timeout_7days',
+        hostPlayerName: game.hostPlayerName,
+        guestPlayerName: game.guestPlayerName,
+        hostPlayerAvatar: game.hostPlayerAvatar,
+        guestPlayerAvatar: game.guestPlayerAvatar,
+        hostPlayerShieldId: game.hostPlayerShieldId,
+        guestPlayerShieldId: game.guestPlayerShieldId,
+        consecutiveCorrect: game.consecutiveCorrect,
+        shareCode: game.shareCode
+      }
+    });
+
+    await saveDuelGameUpdate(finishedGame);
+    setInactivityVictoryAlert(`🏆 Felicitats! Has reclamat la victòria contra ${rivalName} per haver superat el límit d'1 setmana sense respondre (+250 XP, +30 Mèrits).`);
+    setTimeout(() => setInactivityVictoryAlert(null), 8000);
+
+    await loadDuelsData();
+  };
+
   // Eliminar una partida de la llista (tant de Firebase/LocalStorage com de Supabase)
   const handleDeleteGame = async (e: React.MouseEvent, gameId: string) => {
     e.stopPropagation();
@@ -852,34 +966,68 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
     // Immediatament activar la partida perquè l'arena s'obri a l'instant
     setActiveGame(botGame);
 
-    // Guardar a storage local i sincronitzar
+    // Guardar a storage local i sincronitzar utilitzant el mateix ID únic
     try {
-      createMatchInSupabase({
-        challengerId: user.uid,
-        opponentId: bot.id
-      });
       await saveDuelGameUpdate(botGame);
+      try {
+        await supabase.from('matches').upsert({
+          id: botGame.id,
+          player1_id: user.uid,
+          player2_id: bot.id,
+          current_turn: user.uid,
+          status: 'active',
+          score_p1: 0,
+          state: {
+            score_p2: 0,
+            consecutiveCorrect: { [user.uid]: 0, [bot.id]: 0 },
+            botDifficulty: bot.difficulty,
+            botAccuracy: bot.accuracy,
+            hostPlayerName: user.displayName,
+            guestPlayerName: bot.name,
+            shareCode: botGame.shareCode
+          }
+        });
+      } catch (sbErr) {}
       await loadDuelsData();
     } catch (e) {
       console.warn('Bot game persistence warning:', e);
     }
   };
 
-  // Direct challenge to any registered or online user
+  // Direct challenge to any registered or online user (Creació d'UNA SOLA partida unificada)
   const handleChallengeUser = async (targetUser: UserProfile) => {
     AudioEngine.playClick();
     setIsChallengingUser(targetUser.uid);
     try {
-      const spMatch = await createMatchInSupabase({
-        challengerId: user.uid,
-        opponentId: targetUser.uid
-      });
+      // 1. Crear la partida única de repte directe amb ID definitiu
       const challengeGame = await createDirectChallengeGame(user, targetUser);
-      if (spMatch && spMatch.id) {
-        challengeGame.id = String(spMatch.id);
+
+      // 2. Sincronitzar amb Supabase utilitzant EXACTAMENT el mateix ID per evitar duplicats
+      try {
+        await supabase.from('matches').upsert({
+          id: challengeGame.id,
+          player1_id: user.uid,
+          player2_id: targetUser.uid,
+          current_turn: user.uid,
+          status: 'active',
+          score_p1: 0,
+          state: {
+            score_p2: 0,
+            consecutiveCorrect: { [user.uid]: 0, [targetUser.uid]: 0 },
+            hostPlayerName: user.displayName,
+            guestPlayerName: targetUser.displayName,
+            hostPlayerAvatar: user.photoURL,
+            guestPlayerAvatar: targetUser.photoURL,
+            hostPlayerShieldId: user.equippedShieldId,
+            guestPlayerShieldId: targetUser.equippedShieldId,
+            shareCode: challengeGame.shareCode
+          }
+        });
+      } catch (sbErr) {
+        console.warn('Supabase match sync notice:', sbErr);
       }
+
       setActiveGame(challengeGame);
-      await saveDuelGameUpdate(challengeGame);
       setShowNewMatchModal(false);
       await loadDuelsData();
       setFcmPushAlert(`⚔️ Partida creada amb ${targetUser.displayName}. És el teu torn de girar la ruleta!`);
@@ -1105,6 +1253,107 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
       (m.winnerName && m.winnerName.toLowerCase().includes(term))
     );
   }, [finishedHistory, historySearchTerm]);
+
+  // Helper per analitzar el ritme de resposta i última activitat d'un oponent
+  const getUserActivityData = (target: UserProfile) => {
+    const lastLogin = target.lastActive || target.lastLogin;
+    const now = Date.now();
+    // Només es considera 'en línia' si té activitat confirmada fa menys de 5 minuts
+    const isOnline = Boolean(target.isOnline) && Boolean(lastLogin && (now - lastLogin) < 5 * 60 * 1000);
+
+    let speedRating: 'fast' | 'active' | 'slow' = 'active';
+    let speedLabel = '⏱️ Actiu (<24h)';
+    let speedBadgeClass = 'bg-sky-500/20 text-sky-300 border-sky-500/30';
+    let activityText = 'Recentment actiu';
+
+    if (isOnline) {
+      speedRating = 'fast';
+      speedLabel = '⚡ Molt Ràpid (<2h)';
+      speedBadgeClass = 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40';
+      activityText = '🟢 Actiu ara';
+    } else if (lastLogin) {
+      const diffMs = now - lastLogin;
+      const diffHours = diffMs / (3600 * 1000);
+      const diffDays = Math.floor(diffHours / 24);
+
+      if (diffHours < 2) {
+        speedRating = 'fast';
+        speedLabel = '⚡ Molt Ràpid (<2h)';
+        speedBadgeClass = 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40';
+        activityText = 'Actiu fa uns minuts';
+      } else if (diffHours < 12) {
+        speedRating = 'fast';
+        speedLabel = '⚡ Ràpid (avui)';
+        speedBadgeClass = 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40';
+        activityText = `Actiu fa ${Math.floor(diffHours)}h`;
+      } else if (diffHours < 24) {
+        speedRating = 'active';
+        speedLabel = '⏱️ Actiu (<24h)';
+        speedBadgeClass = 'bg-sky-500/20 text-sky-300 border-sky-500/30';
+        activityText = `Actiu fa ${Math.floor(diffHours)}h`;
+      } else if (diffDays <= 3) {
+        speedRating = 'active';
+        speedLabel = '⏱️ Actiu (2-3 dies)';
+        speedBadgeClass = 'bg-slate-800 text-slate-300 border-slate-700';
+        activityText = `Actiu fa ${diffDays}d`;
+      } else {
+        speedRating = 'slow';
+        speedLabel = '🐢 Pausat (>3 dies)';
+        speedBadgeClass = 'bg-slate-900 text-slate-400 border-slate-850';
+        activityText = `Inactiu fa ${diffDays} dies`;
+      }
+    } else {
+      speedRating = 'active';
+      speedLabel = '⏱️ Actiu (<24h)';
+      speedBadgeClass = 'bg-sky-500/20 text-sky-300 border-sky-500/30';
+      activityText = 'Actiu aquesta setmana';
+    }
+
+    return {
+      isOnline,
+      speedRating,
+      speedLabel,
+      speedBadgeClass,
+      activityText
+    };
+  };
+
+  // Opositors ordenats intel·ligentment per activitat i filtrats
+  const sortedAndFilteredUsers = useMemo(() => {
+    let list = registeredUsers.map(u => ({
+      ...u,
+      activity: getUserActivityData(u)
+    }));
+
+    // Prioritat d'ordenació: En línia 🟢 -> Molt Ràpids ⚡ -> Actius ⏱️ -> XP
+    list.sort((a, b) => {
+      if (a.activity.isOnline && !b.activity.isOnline) return -1;
+      if (!a.activity.isOnline && b.activity.isOnline) return 1;
+
+      const scoreWeight = { fast: 3, active: 2, slow: 1 };
+      const weightA = scoreWeight[a.activity.speedRating] || 2;
+      const weightB = scoreWeight[b.activity.speedRating] || 2;
+      if (weightA !== weightB) return weightB - weightA;
+
+      return (b.xp || 0) - (a.xp || 0);
+    });
+
+    if (userFilterTab === 'online') {
+      list = list.filter(u => u.activity.isOnline);
+    } else if (userFilterTab === 'fast') {
+      list = list.filter(u => u.activity.speedRating === 'fast');
+    }
+
+    if (userSearchTerm.trim()) {
+      const term = userSearchTerm.toLowerCase();
+      list = list.filter(u => 
+        u.displayName.toLowerCase().includes(term) || 
+        u.rank.title.toLowerCase().includes(term)
+      );
+    }
+
+    return list;
+  }, [registeredUsers, userFilterTab, userSearchTerm]);
 
   // Helper per resoldre l'escut equipat oficial d'un aspirant o bot policial
   const resolvePlayerShield = (
@@ -1982,6 +2231,41 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
             </div>
           )}
 
+          {/* Alert de Victòria Reclamada per Inactivitat */}
+          {inactivityVictoryAlert && (
+            <div className="p-4 bg-gradient-to-r from-amber-500/20 via-yellow-500/25 to-amber-500/20 border-2 border-amber-500/80 rounded-2xl text-xs sm:text-sm text-amber-200 font-bold flex items-center justify-between gap-3 shadow-xl animate-bounce-short">
+              <div className="flex items-center gap-2.5">
+                <Trophy className="w-5 h-5 text-amber-400 shrink-0" />
+                <span>{inactivityVictoryAlert}</span>
+              </div>
+              <button 
+                onClick={() => setInactivityVictoryAlert(null)}
+                className="p-1 hover:bg-amber-500/20 rounded-lg text-amber-300 transition-colors cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+          )}
+
+          {/* Banner de Duels Guanyats per Inactivitat (+1 setmana) */}
+          {rivalTurnGames.some(g => (Date.now() - (g.lastUpdated || Date.now())) >= (7 * 24 * 60 * 60 * 1000)) && (
+            <div className="p-3.5 sm:p-4 bg-gradient-to-r from-amber-500/20 via-yellow-500/25 to-amber-500/20 border-2 border-amber-500/80 rounded-2xl flex items-center justify-between gap-3 shadow-xl shadow-amber-500/10 animate-bounce-short">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-amber-500 flex items-center justify-center text-slate-950 font-black text-xl shrink-0 shadow-md">
+                  🏆
+                </div>
+                <div>
+                  <h4 className="text-xs sm:text-sm font-black text-white">
+                    ¡Tens duels guanyats per abandonament del rival!
+                  </h4>
+                  <p className="text-[11px] text-amber-200/90 mt-0.5">
+                    El teu oponent ha superat el límit reglamentari d'1 setmana (168h) sense respondre. Reclama la teva victòria oficial (+250 XP i +30 Mèrits).
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* EL TEU TORN EN EL DUEL */}
           <div className="space-y-3">
             <div className="flex items-center justify-between">
@@ -2002,6 +2286,18 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
                   const myS = isHostP ? game.hostRedStripes : game.guestRedStripes;
                   const rivalS = isHostP ? game.guestRedStripes : game.hostRedStripes;
                   const rName = isHostP ? (game.guestPlayerName || 'Convidat') : game.hostPlayerName;
+                  const rivalUid = isHostP ? (game.guestPlayerUid || 'bot_ai') : game.hostPlayerUid;
+                  const rivalUser = registeredUsers.find(u => u.uid === rivalUid);
+                  const rivalActivity = rivalUser ? getUserActivityData(rivalUser) : null;
+
+                  const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+                  const turnStart = game.lastUpdated || Date.now();
+                  const timeElapsed = Math.max(0, Date.now() - turnStart);
+                  const timeLeft = Math.max(0, ONE_WEEK_MS - timeElapsed);
+                  const totalHours = Math.floor(timeLeft / (3600 * 1000));
+                  const days = Math.floor(timeLeft / (24 * 3600 * 1000));
+                  const hours = Math.floor((timeLeft % (24 * 3600 * 1000)) / (3600 * 1000));
+                  const isUrgent = days === 0;
 
                   return (
                     <div
@@ -2010,38 +2306,59 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
                         AudioEngine.playClick();
                         setActiveGame(game);
                       }}
-                      className="p-3.5 bg-slate-900 hover:bg-slate-850 border border-emerald-500/40 hover:border-emerald-400 rounded-2xl cursor-pointer transition-all active:scale-[0.99] shadow-lg flex items-center justify-between gap-3"
+                      className="p-3.5 bg-slate-900 hover:bg-slate-850 border border-emerald-500/40 hover:border-emerald-400 rounded-2xl cursor-pointer transition-all active:scale-[0.99] shadow-lg flex flex-col justify-between gap-2.5"
                     >
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-xl shrink-0">
-                          ⚔️
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-xl shrink-0">
+                            ⚔️
+                          </div>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-xs font-black text-white truncate max-w-[120px]">{rName}</span>
+                              <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 shrink-0">
+                                Et toca jugar
+                              </span>
+                              {rivalActivity && (
+                                <span className={`text-[8px] font-black px-1.5 py-0.2 rounded border ${rivalActivity.speedBadgeClass}`}>
+                                  {rivalActivity.speedLabel}
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-[11px] text-slate-400 flex items-center gap-2 mt-0.5">
+                              <span>🛡️ {myS}/4 vs {rivalS}/4</span>
+                              <span className="font-mono text-[9px] text-slate-500">#{game.shareCode}</span>
+                            </div>
+                          </div>
                         </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs font-black text-white truncate max-w-[130px]">{rName}</span>
-                            <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                              Et toca jugar
-                            </span>
-                          </div>
-                          <div className="text-[11px] text-slate-400 flex items-center gap-2 mt-0.5">
-                            <span>🛡️ {myS}/4 vs {rivalS}/4</span>
-                            <span className="font-mono text-[9px] text-slate-500">#{game.shareCode}</span>
-                          </div>
+
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <button 
+                            onClick={(e) => handleDeleteGame(e, game.id)}
+                            title="Eliminar aquest duel de la llista"
+                            className="p-1.5 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors cursor-pointer"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                          <button className="py-1.5 px-3 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-xl text-xs flex items-center gap-1">
+                            <span>GIRAR</span>
+                            <span>➔</span>
+                          </button>
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        <button 
-                          onClick={(e) => handleDeleteGame(e, game.id)}
-                          title="Eliminar aquest duel de la llista"
-                          className="p-1.5 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors cursor-pointer"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                        <button className="py-1.5 px-3 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-xl text-xs flex items-center gap-1">
-                          <span>GIRAR</span>
-                          <span>➔</span>
-                        </button>
+                      {/* Compte enrere límit de torn (1 setmana) */}
+                      <div className={`flex items-center gap-1.5 text-[10px] font-bold px-2.5 py-1.5 rounded-xl border ${
+                        isUrgent 
+                          ? 'bg-red-500/20 text-red-300 border-red-500/40 animate-pulse' 
+                          : 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+                      }`}>
+                        <Clock className="w-3.5 h-3.5 shrink-0" />
+                        <span className="truncate">
+                          {isUrgent 
+                            ? `🔥 URGENT: Contesta en menys de ${hours}h!` 
+                            : `⏳ Contesta en menys de ${totalHours}h (${days}d ${hours}h) • Límit: 1 setmana`}
+                        </span>
                       </div>
                     </div>
                   );
@@ -2068,6 +2385,18 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
                   const myS = isHostP ? game.hostRedStripes : game.guestRedStripes;
                   const rivalS = isHostP ? game.guestRedStripes : game.hostRedStripes;
                   const rName = isHostP ? (game.guestPlayerName || 'Convidat') : game.hostPlayerName;
+                  const rivalUid = isHostP ? (game.guestPlayerUid || 'bot_ai') : game.hostPlayerUid;
+                  const rivalUser = registeredUsers.find(u => u.uid === rivalUid);
+                  const rivalActivity = rivalUser ? getUserActivityData(rivalUser) : null;
+
+                  const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+                  const turnStart = game.lastUpdated || Date.now();
+                  const timeElapsed = Math.max(0, Date.now() - turnStart);
+                  const isExpired = timeElapsed >= ONE_WEEK_MS;
+                  const timeLeft = Math.max(0, ONE_WEEK_MS - timeElapsed);
+                  const totalHours = Math.floor(timeLeft / (3600 * 1000));
+                  const days = Math.floor(timeLeft / (24 * 3600 * 1000));
+                  const hours = Math.floor((timeLeft % (24 * 3600 * 1000)) / (3600 * 1000));
 
                   return (
                     <div
@@ -2076,30 +2405,141 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
                         AudioEngine.playClick();
                         setActiveGame(game);
                       }}
-                      className="p-3 bg-slate-900/60 hover:bg-slate-900 border border-slate-800 rounded-2xl cursor-pointer transition-all flex items-center justify-between gap-3 opacity-80"
+                      className={`p-3.5 rounded-2xl cursor-pointer transition-all flex flex-col justify-between gap-2.5 shadow-md ${
+                        isExpired
+                          ? 'bg-amber-950/40 border-2 border-amber-500/80 shadow-amber-500/15'
+                          : 'bg-slate-900/60 hover:bg-slate-900 border border-slate-800 opacity-90'
+                      }`}
                     >
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center text-base">
-                          ⏳
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-base shrink-0 ${
+                            isExpired ? 'bg-amber-500/20 text-amber-300' : 'bg-slate-800'
+                          }`}>
+                            {isExpired ? '🏆' : '⏳'}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="text-xs font-bold text-slate-300 truncate max-w-[120px]">{rName}</span>
+                              {rivalActivity && (
+                                <span className={`text-[8px] font-black px-1.5 py-0.2 rounded border ${rivalActivity.speedBadgeClass}`}>
+                                  {rivalActivity.speedLabel}
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-[10px] text-slate-500">🛡️ {myS}/4 vs {rivalS}/4</div>
+                          </div>
                         </div>
-                        <div>
-                          <div className="text-xs font-bold text-slate-300 truncate max-w-[140px]">{rName}</div>
-                          <div className="text-[10px] text-slate-500">🛡️ {myS}/4 vs {rivalS}/4</div>
+
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {!isExpired && (
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-800 text-amber-400 border border-slate-700">
+                              Esperant rival
+                            </span>
+                          )}
+                          <button 
+                            onClick={(e) => handleDeleteGame(e, game.id)}
+                            title="Eliminar aquest duel de la llista"
+                            className="p-1.5 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors cursor-pointer"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-800 text-amber-400 border border-slate-700">
-                          Esperant rival
-                        </span>
-                        <button 
-                          onClick={(e) => handleDeleteGame(e, game.id)}
-                          title="Eliminar aquest duel de la llista"
-                          className="p-1.5 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors cursor-pointer"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
+                      {/* Notificació d'inactivitat: Reclamar Victòria o Temps Restant */}
+                      {isExpired ? (
+                        <div className="p-2.5 bg-gradient-to-r from-amber-500/20 via-yellow-500/25 to-amber-500/20 border-2 border-amber-500/60 rounded-xl flex items-center justify-between gap-2 shadow-lg shadow-amber-500/10">
+                          <div className="text-[11px] font-black text-amber-300 flex items-center gap-1.5">
+                            <span className="text-base">🏆</span>
+                            <div>
+                              <div>+1 setmana sense contestar!</div>
+                              <div className="text-[9px] text-amber-400/80 font-normal">Victòria automàtica per abandonament</div>
+                            </div>
+                          </div>
+                          <button
+                            onClick={(e) => handleClaimInactivityVictory(e, game)}
+                            className="py-1.5 px-3 bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-slate-950 font-black text-[11px] rounded-xl shadow-md shadow-amber-500/25 active:scale-95 cursor-pointer flex items-center gap-1 shrink-0"
+                          >
+                            <Trophy className="w-3.5 h-3.5 fill-slate-950" />
+                            <span>Reclamar Victòria (+250 XP)</span>
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-between gap-2 flex-wrap">
+                          <div className="flex items-center gap-1.5 text-[10px] text-slate-400">
+                            <Clock className="w-3 h-3 text-slate-500 shrink-0" />
+                            <span>⏰ Contesta en menys de {totalHours}h ({days}d {hours}h) • Límit: 1 setmana</span>
+                          </div>
+
+                          {rivalUid && !rivalUid.startsWith('bot_') && (() => {
+                            const tocStorageKey = `last_toc_${game.id}`;
+                            const lastSentToc = Number(localStorage.getItem(tocStorageKey) || 0);
+                            const cooldownMs = 5 * 60 * 1000;
+                            const isCoolingDown = Date.now() - lastSentToc < cooldownMs;
+                            const minutesLeft = Math.ceil((cooldownMs - (Date.now() - lastSentToc)) / 60000);
+
+                            return (
+                              <button
+                                disabled={isCoolingDown}
+                                onClick={async (e) => {
+                                  e.stopPropagation();
+                                  if (isCoolingDown) return;
+
+                                  AudioEngine.playClick();
+                                  localStorage.setItem(tocStorageKey, Date.now().toString());
+
+                                  // Guardar estat de Toc a la partida (perquè salti en temps real a l'altre dispositiu)
+                                  const updatedWithToc: DuelGame = {
+                                    ...game,
+                                    lastTocAt: Date.now(),
+                                    lastTocFrom: user.displayName,
+                                    lastTocUid: user.uid,
+                                    lastUpdated: Date.now()
+                                  };
+
+                                  try {
+                                    await saveDuelGameUpdate(updatedWithToc);
+                                    try {
+                                      await supabase.from('matches').update({
+                                        current_turn: game.currentTurnUid,
+                                        state: {
+                                          lastTocAt: updatedWithToc.lastTocAt,
+                                          lastTocFrom: updatedWithToc.lastTocFrom,
+                                          lastTocUid: updatedWithToc.lastTocUid
+                                        }
+                                      }).eq('id', game.id);
+                                    } catch (sbErr) {}
+                                  } catch (err) {
+                                    console.warn('Error saving toc to duel:', err);
+                                  }
+
+                                  // Emetre notificació push / SSE i alerta en pantalla
+                                  triggerTurnPushNotification({
+                                    matchId: game.id,
+                                    senderUid: user.uid,
+                                    senderName: user.displayName,
+                                    targetUid: rivalUid,
+                                    customMessage: `🚨 TOC D'ATENCIÓ DE ${user.displayName.toUpperCase()}! Et toca contestar al nostre duel ara mateix.`
+                                  }).then(() => {
+                                    setFcmPushAlert(`📲 Toc enviat a la pantalla de ${rName}!`);
+                                    setTimeout(() => setFcmPushAlert(null), 4000);
+                                  }).catch(console.warn);
+                                }}
+                                className={`text-[9px] font-black px-2 py-0.5 rounded border flex items-center gap-1 transition-all shrink-0 cursor-pointer ${
+                                  isCoolingDown
+                                    ? 'bg-slate-800 text-slate-400 border-slate-700 opacity-60 cursor-not-allowed'
+                                    : 'bg-gradient-to-r from-amber-500/20 to-red-500/20 hover:from-amber-500/30 hover:to-red-500/30 text-amber-300 border-amber-500/40 hover:border-amber-400 active:scale-95 shadow-sm'
+                                }`}
+                                title={isCoolingDown ? `Pots tornar a enviar un toc en ${minutesLeft} minuts` : "Enviar un toc d'atenció directe a la pantalla del teu oponent"}
+                              >
+                                <span className={isCoolingDown ? '' : 'animate-bounce'}>🔔</span>
+                                <span>{isCoolingDown ? `Toc enviat (${minutesLeft}m)` : 'Enviar Toc'}</span>
+                              </button>
+                            );
+                          })()}
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -2107,13 +2547,15 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
             )}
           </div>
 
-          {/* RETAR OPOSITORS (TOTS ELS REGISTRATS) */}
+          {/* RETAR OPOSITORS (TOTS ELS REGISTRATS) AMB VELOCITAT DE RESPOSTA */}
           <div className="space-y-3 pt-2">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-              <h3 className="text-sm font-black text-white flex items-center gap-2">
+              <div className="flex items-center gap-2">
                 <Users className="w-4 h-4 text-sky-400" />
-                <span>RETAR OPOSITORS ({registeredUsers.length})</span>
-              </h3>
+                <h3 className="text-sm font-black text-white">
+                  <span>RETAR OPOSITORS ({sortedAndFilteredUsers.length})</span>
+                </h3>
+              </div>
               
               {/* Cercador directe d'opositors */}
               <div className="relative w-full sm:w-64">
@@ -2128,59 +2570,101 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
               </div>
             </div>
 
-            {registeredUsers.length === 0 ? (
+            {/* Filtres de ritme de joc i activitat */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs">
+              <button
+                type="button"
+                onClick={() => setUserFilterTab('all')}
+                className={`px-3 py-1 rounded-xl font-bold transition-all cursor-pointer whitespace-nowrap ${
+                  userFilterTab === 'all'
+                    ? 'bg-amber-500 text-slate-950 shadow-md font-black'
+                    : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
+                }`}
+              >
+                Tots ({registeredUsers.length})
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setUserFilterTab('fast')}
+                className={`px-3 py-1 rounded-xl font-bold flex items-center gap-1 transition-all cursor-pointer whitespace-nowrap ${
+                  userFilterTab === 'fast'
+                    ? 'bg-amber-500 text-slate-950 shadow-md font-black'
+                    : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
+                }`}
+              >
+                <Zap className="w-3 h-3 text-amber-400" />
+                <span>Més Ràpids (&lt;2h)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setUserFilterTab('online')}
+                className={`px-3 py-1 rounded-xl font-bold flex items-center gap-1 transition-all cursor-pointer whitespace-nowrap ${
+                  userFilterTab === 'online'
+                    ? 'bg-emerald-500 text-slate-950 shadow-md font-black'
+                    : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
+                }`}
+              >
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                <span>En Línia ({registeredUsers.filter(u => u.isOnline).length})</span>
+              </button>
+            </div>
+
+            {sortedAndFilteredUsers.length === 0 ? (
               <div className="p-4 rounded-2xl bg-slate-900/40 border border-slate-800 text-center text-slate-500 text-xs">
-                Carregant opositors registrats...
+                No s'ha trobat cap opositor amb aquests criteris de cerca.
               </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 max-h-[500px] overflow-y-auto pr-1">
-                {registeredUsers
-                  .filter(u => !userSearchTerm.trim() || u.displayName.toLowerCase().includes(userSearchTerm.toLowerCase()) || u.rank.title.toLowerCase().includes(userSearchTerm.toLowerCase()))
-                  .map((target) => (
-                    <div
-                      key={target.uid}
-                      className="p-3 bg-slate-900/80 hover:bg-slate-900 border border-slate-800 hover:border-slate-700 rounded-2xl flex items-center justify-between gap-2.5 transition-all shadow-md"
-                    >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <div className="relative shrink-0 flex items-center justify-center">
-                          <div className="p-0.5 rounded-xl bg-slate-800/90 border border-slate-700 shadow-sm flex items-center justify-center">
-                            <ShieldRenderer 
-                              shieldId={resolvePlayerShield(target.uid, target.equippedShieldId, target.photoURL)}
-                              size={34}
-                            />
-                          </div>
-                          <span 
-                            className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-slate-950 ${
-                              target.isOnline ? 'bg-emerald-500' : 'bg-slate-500'
-                            }`}
-                            title={target.isOnline ? 'En línia' : 'Desconnectat'}
+                {sortedAndFilteredUsers.map((target) => (
+                  <div
+                    key={target.uid}
+                    className="p-3 bg-slate-900/80 hover:bg-slate-900 border border-slate-800 hover:border-slate-700 rounded-2xl flex items-center justify-between gap-2.5 transition-all shadow-md"
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="relative shrink-0 flex items-center justify-center">
+                        <div className="p-0.5 rounded-xl bg-slate-800/90 border border-slate-700 shadow-sm flex items-center justify-center">
+                          <ShieldRenderer 
+                            shieldId={resolvePlayerShield(target.uid, target.equippedShieldId, target.photoURL)}
+                            size={34}
                           />
                         </div>
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-xs font-black text-white truncate max-w-[110px]">{target.displayName}</span>
-                            {target.isOnline && (
-                              <span className="text-[8px] font-black px-1 py-0.2 rounded bg-emerald-500/20 text-emerald-400">
-                                ONLINE
-                              </span>
-                            )}
-                          </div>
-                          <div className="text-[10px] text-slate-400 truncate">
-                            {target.rank.badge} {target.rank.title}
-                          </div>
+                        <span 
+                          className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-slate-950 ${
+                            target.activity.isOnline ? 'bg-emerald-500 animate-pulse' : 'bg-slate-500'
+                          }`}
+                          title={target.activity.isOnline ? 'En línia' : 'Desconnectat'}
+                        />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-xs font-black text-white truncate max-w-[120px]">{target.displayName}</span>
+                          <span className={`text-[8px] font-black px-1.5 py-0.5 rounded border ${target.activity.speedBadgeClass}`}>
+                            {target.activity.speedLabel}
+                          </span>
+                        </div>
+                        <div className="text-[10px] text-slate-400 truncate flex items-center gap-1 mt-0.5">
+                          <span>{target.rank.badge} {target.rank.title}</span>
+                          <span>•</span>
+                          <span className="text-amber-400/90 font-mono font-bold">{target.xp} XP</span>
+                        </div>
+                        <div className="text-[9px] text-slate-500 truncate mt-0.5">
+                          {target.activity.activityText}
                         </div>
                       </div>
-
-                      <button
-                        onClick={() => handleChallengeUser(target)}
-                        disabled={isChallengingUser === target.uid}
-                        className="py-1.5 px-2.5 bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white font-black rounded-xl text-xs shrink-0 active:scale-95 transition-transform flex items-center gap-1 cursor-pointer disabled:opacity-50"
-                      >
-                        <Swords className="w-3.5 h-3.5" />
-                        <span>{isChallengingUser === target.uid ? '...' : 'Retar'}</span>
-                      </button>
                     </div>
-                  ))}
+
+                    <button
+                      onClick={() => handleChallengeUser(target)}
+                      disabled={isChallengingUser === target.uid}
+                      className="py-1.5 px-2.5 bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white font-black rounded-xl text-xs shrink-0 active:scale-95 transition-transform flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                    >
+                      <Swords className="w-3.5 h-3.5" />
+                      <span>{isChallengingUser === target.uid ? '...' : 'Retar'}</span>
+                    </button>
+                  </div>
+                ))}
               </div>
             )}
           </div>
@@ -2824,53 +3308,52 @@ export const ModeDuels: React.FC<ModeDuelsProps> = ({
 
               {/* List of registered users */}
               <div className="flex-1 overflow-y-auto space-y-1.5 pr-1 max-h-[240px]">
-                {registeredUsers
-                  .filter(u => !userSearchTerm.trim() || u.displayName.toLowerCase().includes(userSearchTerm.toLowerCase()) || u.rank.title.toLowerCase().includes(userSearchTerm.toLowerCase()))
-                  .map(target => (
-                    <div 
-                      key={target.uid}
-                      className="p-2.5 bg-slate-950/80 hover:bg-slate-950 border border-slate-800 rounded-xl flex items-center justify-between gap-3 transition-colors"
-                    >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <div className="relative shrink-0">
-                          <img 
-                            src={target.photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${target.uid}`} 
-                            alt={target.displayName}
-                            className="w-8 h-8 rounded-full border border-slate-700 object-cover bg-slate-800"
-                            referrerPolicy="no-referrer"
-                          />
-                          <span 
-                            className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-slate-950 ${
-                              target.isOnline ? 'bg-emerald-500' : 'bg-slate-500'
-                            }`}
-                            title={target.isOnline ? 'En línia' : 'Desconnectat'}
-                          />
+                {sortedAndFilteredUsers.map(target => (
+                  <div 
+                    key={target.uid}
+                    className="p-2.5 bg-slate-950/80 hover:bg-slate-950 border border-slate-800 rounded-xl flex items-center justify-between gap-3 transition-colors"
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="relative shrink-0">
+                        <img 
+                          src={target.photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${target.uid}`} 
+                          alt={target.displayName}
+                          className="w-8 h-8 rounded-full border border-slate-700 object-cover bg-slate-800"
+                          referrerPolicy="no-referrer"
+                        />
+                        <span 
+                          className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-slate-950 ${
+                            target.activity.isOnline ? 'bg-emerald-500 animate-pulse' : 'bg-slate-500'
+                          }`}
+                          title={target.activity.isOnline ? 'En línia' : 'Desconnectat'}
+                        />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-xs font-bold text-white truncate max-w-[120px]">{target.displayName}</span>
+                          <span className={`text-[8px] font-black px-1.5 py-0.5 rounded border ${target.activity.speedBadgeClass}`}>
+                            {target.activity.speedLabel}
+                          </span>
                         </div>
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-xs font-bold text-white truncate max-w-[130px]">{target.displayName}</span>
-                            {target.isOnline && (
-                              <span className="text-[9px] font-black px-1 py-0.2 rounded bg-emerald-500/20 text-emerald-400">
-                                ONLINE
-                              </span>
-                            )}
-                          </div>
-                          <div className="text-[10px] text-slate-400 truncate">
-                            {target.rank.badge} {target.rank.title} • <span className="text-amber-400 font-bold">{target.xp} XP</span>
-                          </div>
+                        <div className="text-[10px] text-slate-400 truncate">
+                          {target.rank.badge} {target.rank.title} • <span className="text-amber-400 font-bold">{target.xp} XP</span>
+                        </div>
+                        <div className="text-[9px] text-slate-500 truncate">
+                          {target.activity.activityText}
                         </div>
                       </div>
-
-                      <button
-                        onClick={() => handleChallengeUser(target)}
-                        disabled={isChallengingUser === target.uid}
-                        className="py-1 px-2.5 bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white font-black rounded-lg text-[11px] shrink-0 active:scale-95 transition-transform flex items-center gap-1 cursor-pointer disabled:opacity-50"
-                      >
-                        <Swords className="w-3 h-3" />
-                        <span>{isChallengingUser === target.uid ? 'Enviant...' : 'Retar'}</span>
-                      </button>
                     </div>
-                  ))}
+
+                    <button
+                      onClick={() => handleChallengeUser(target)}
+                      disabled={isChallengingUser === target.uid}
+                      className="py-1 px-2.5 bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white font-black rounded-lg text-[11px] shrink-0 active:scale-95 transition-transform flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                    >
+                      <Swords className="w-3 h-3" />
+                      <span>{isChallengingUser === target.uid ? 'Enviant...' : 'Retar'}</span>
+                    </button>
+                  </div>
+                ))}
               </div>
             </div>
           </div>

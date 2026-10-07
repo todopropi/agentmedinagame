@@ -803,6 +803,155 @@ export async function deleteSupabaseStoreItem(shieldId: string) {
 }
 
 /**
+ * F2) GESTIÓ DE MATERIAL D'ESTUDI / APUNTS (ROLES ADMIN I DOCÈNCIA):
+ * Permet emmagatzemar arxius, apunts i dossiers en qualsevol format (PDF, Word, PPTX, TXT)
+ * amb estats: 'actiu', 'proximament', 'ocult'.
+ */
+export const DEFAULT_STUDY_MATERIALS = [
+  {
+    id: 'mat_1',
+    titol: "Dossier Oficial CME: Esquemes Àmbit A (Història i Institucions)",
+    descripcio: "Resum executiu de tots els esdeveniments clau des de 1714 fins a la Generalitat actual, amb taules cronològiques.",
+    format: 'pdf' as const,
+    ambit: 'Àmbit A',
+    temaAssociat: 'A1 - Història de Catalunya',
+    preuMerits: 25,
+    arxiuUrl: 'https://interior.gencat.cat/ca/el_departament/publicacions/seguretat/guia-oposicions/',
+    estat: 'actiu' as const,
+    dataCreacio: '2026-01-15',
+    tamanyText: '2.8 MB (42 pàgines)'
+  },
+  {
+    id: 'mat_2',
+    titol: "Quadre Sinòptic de Procediment Policial & LECrim",
+    descripcio: "Procediment d'actuació davant la detenció, terminis legals de 72h, dret d'assistència lletrada i Habeas Corpus (LO 6/1984).",
+    format: 'pdf' as const,
+    ambit: 'Àmbit C',
+    temaAssociat: 'C2 - LECrim i Detingut',
+    preuMerits: 30,
+    arxiuUrl: 'https://interior.gencat.cat/ca/el_departament/publicacions/seguretat/guia-oposicions/',
+    estat: 'actiu' as const,
+    dataCreacio: '2026-02-10',
+    tamanyText: '1.9 MB (28 pàgines)'
+  },
+  {
+    id: 'mat_3',
+    titol: "Recull de Preguntes Examen Oficial Comentades (2024 - 2025)",
+    descripcio: "Compilació de les preguntes oficials dels dos últims processos selectius amb justificació raonada i jurisprudència.",
+    format: 'pdf' as const,
+    ambit: 'Tots',
+    preuMerits: 45,
+    arxiuUrl: 'https://interior.gencat.cat/ca/el_departament/publicacions/seguretat/guia-oposicions/',
+    estat: 'actiu' as const,
+    dataCreacio: '2026-03-01',
+    tamanyText: '4.5 MB (65 pàgines)'
+  },
+  {
+    id: 'mat_4',
+    titol: "Apunts Clau de Codi Penal: Delictes contra les Persones i Patrimoni",
+    descripcio: "Taula comparativa de penes, agreujants, delictes d'homicidi, lesions, robatori, furt i estafes.",
+    format: 'pdf' as const,
+    ambit: 'Àmbit C',
+    temaAssociat: 'C1 - Codi Penal',
+    preuMerits: 35,
+    arxiuUrl: '',
+    estat: 'proximament' as const,
+    dataCreacio: '2026-04-01',
+    tamanyText: 'Pròximament disponible'
+  },
+  {
+    id: 'mat_5',
+    titol: "Guia Oficial de Deontologia i Règim Disciplinari PG-ME 2026",
+    descripcio: "Classificació completa de faltes molt greus, greus i lleus segons la Llei 10/1994 amb terminis de prescripció.",
+    format: 'pdf' as const,
+    ambit: 'Àmbit C',
+    temaAssociat: 'C5 - Deontologia',
+    preuMerits: 20,
+    arxiuUrl: 'https://interior.gencat.cat/ca/el_departament/publicacions/seguretat/guia-oposicions/',
+    estat: 'actiu' as const,
+    dataCreacio: '2026-02-20',
+    tamanyText: '1.2 MB (18 pàgines)'
+  },
+  {
+    id: 'mat_6',
+    titol: "Presentació Interactiva: Policia Internacional (Europol, Interpol, Sirene)",
+    descripcio: "Diapositives d'estudi amb infografies de cooperació policial transfronterera, alertes SIS i Tractat de Prüm.",
+    format: 'pptx' as const,
+    ambit: 'Àmbit D',
+    temaAssociat: 'D4 - Policia Internacional',
+    preuMerits: 25,
+    arxiuUrl: '',
+    estat: 'proximament' as const,
+    dataCreacio: '2026-05-01',
+    tamanyText: 'Pròximament disponible'
+  }
+];
+
+export async function fetchSupabaseStudyMaterials(): Promise<any[]> {
+  try {
+    const { data, error } = await supabase
+      .from('matches')
+      .select('*')
+      .eq('id', 'system_study_materials')
+      .maybeSingle();
+
+    if (!error && data && data.state?.materials && Array.isArray(data.state.materials)) {
+      return data.state.materials;
+    }
+
+    // Fallback a localStorage o valors per defecte
+    const local = localStorage.getItem('agent_medina_study_materials');
+    if (local) {
+      try {
+        const parsed = JSON.parse(local);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch {}
+    }
+
+    return DEFAULT_STUDY_MATERIALS;
+  } catch (err) {
+    console.warn('Error fetching study materials from Supabase:', err);
+    return DEFAULT_STUDY_MATERIALS;
+  }
+}
+
+export async function syncSupabaseStudyMaterials(materials: any[]): Promise<boolean> {
+  try {
+    if (!Array.isArray(materials)) return false;
+
+    // Desar localment per immediatesa
+    localStorage.setItem('agent_medina_study_materials', JSON.stringify(materials));
+
+    const payload = {
+      id: 'system_study_materials',
+      player1_id: 'system',
+      player2_id: 'study_materials',
+      current_turn: 'system',
+      status: 'active',
+      score_p1: materials.length,
+      score_p2: 0,
+      state: {
+        materials,
+        updatedAt: Date.now()
+      }
+    };
+
+    const { error } = await supabase
+      .from('matches')
+      .upsert(payload, { onConflict: 'id' });
+
+    if (error) {
+      console.warn('Avís syncing study materials to Supabase:', error.message);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.warn('Exception syncing study materials to Supabase:', err);
+    return false;
+  }
+}
+
+/**
  * Subscripció en temps real als canvis del catàleg de la botiga
  * Escolta canvis a 'system_store_catalog' i a 'matches'
  */
@@ -1506,7 +1655,6 @@ export async function syncSupabaseUserProgression(userId: string, data: Record<s
     if (Array.isArray(data.savedMnemonicIds)) progressionPayload.saved_mnemonic_ids = data.savedMnemonicIds;
     if (Array.isArray(data.completedAmbits)) progressionPayload.completed_ambits = data.completedAmbits;
     if (data.boardProgress) progressionPayload.board_progress = data.boardProgress;
-    if (data.lastActiveDay || data.last_active_day) progressionPayload.last_active_day = data.lastActiveDay || data.last_active_day;
 
     const dedicatedPromise = supabase
       .from('user_progression')
@@ -1566,7 +1714,6 @@ export async function fetchSupabaseUserProgression(userId: string): Promise<any 
         savedMnemonicIds: progRow.saved_mnemonic_ids || matchGameData?.savedMnemonicIds || [],
         completedAmbits: progRow.completed_ambits || matchGameData?.completedAmbits || [],
         boardProgress: progRow.board_progress || matchGameData?.boardProgress || {},
-        lastActiveDay: progRow.last_active_day || matchGameData?.lastActiveDay,
         updatedAt: progRow.updated_at || matchGameData?.updatedAt
       };
     }
@@ -1942,7 +2089,11 @@ export async function fetchAllProfiles(): Promise<any[]> {
           correct_questions: prog.correct_questions || fb.correctQuestionIds || [],
           can_view_study_report: hasStudyAccess,
           board_progress: prog.board_progress || fb.boardProgress || {},
-          wildcards_count: prog.wildcards_count ?? p.wildcards_count ?? fb.wildcardsCount ?? 0
+          wildcards_count: prog.wildcards_count ?? p.wildcards_count ?? fb.wildcardsCount ?? 0,
+          streakCount: prog.streakCount ?? prog.streak_count ?? fb.streakCount ?? 0,
+          streakShieldsCount: prog.streakShieldsCount ?? prog.streak_shields_count ?? fb.streakShieldsCount ?? 0,
+          activeTimeSeconds: prog.activeTimeSeconds ?? prog.active_time_seconds ?? fb.activeTimeSeconds ?? 0,
+          topicMastery: prog.topicMastery || prog.topic_mastery || fb.topicMastery || {}
         };
     });
 

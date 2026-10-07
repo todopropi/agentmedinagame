@@ -40,7 +40,7 @@ export interface UserProfile {
   wildcardsCount?: number;
   createdAt?: number;
   lastLogin?: number;
-  lastActiveDay?: string; // Formato YYYY-MM-DD per al control de racha i decaïment diari d'inactivitat (-20 XP/dia)
+  lastActive?: number;
   readBroadcastIds?: string[]; // IDs de missatges de l'admin ja llegits
   isOnline?: boolean; // <-- AÑADIDO PARA TIEMPO REAL
   completedAmbits?: string[];
@@ -50,6 +50,67 @@ export interface UserProfile {
   deviceTokens?: string[];
   devicePlatform?: 'android' | 'web';
   lastTokenSync?: number;
+  // Bucle de Gamificació Adictiva & Racha Diària
+  streakCount?: number;
+  lastStreakDate?: string; // 'YYYY-MM-DD'
+  streakShieldsCount?: number; // Escuts de protecció de racha comprats a la botiga
+  todayQuestionsCount?: number; // Preguntes respostes en la data d'avui (mínim 5 per assegurar racha)
+  todayDate?: string; // 'YYYY-MM-DD'
+  dailyQuestionsAnsweredCount?: number;
+  dailyQuestionsAnsweredDate?: string;
+  activeTimeSeconds?: number; // Temps actiu acumulat en segons
+  lastDailyMissionDate?: string; // Data de l'última missió exprés diària completada
+  // Camí a l'ISPC: Estat de domini i degradació per temes
+  topicMastery?: Record<string, TopicMasteryRecord>;
+  purchasedMaterialIds?: string[]; // IDs de material d'estudi desbloquejat/comprat amb mèrits
+  unlockedMaterialIds?: string[]; // IDs de material d'estudi desbloquejats
+  tacticalChestsCount?: number; // Cofres tàctics pendents d'obrir
+}
+
+export interface TopicMasteryRecord {
+  mastery: number; // 0 - 100
+  lastPlayedAt: number; // timestamp en ms
+  gamesPlayed?: number;
+  correctAnswers?: number;
+  totalAnswers?: number;
+  tier?: 'none' | 'bronze' | 'silver' | 'gold';
+}
+
+export type TopicAmbitCategory = 'Àmbit A' | 'Àmbit B' | 'Àmbit C' | 'Àmbit D';
+
+export interface CamiTopicSubtopic {
+  id: string; // ex: 'a1_1'
+  num: string; // ex: '1' o '1.1'
+  title: string;
+  description?: string;
+}
+
+export interface CamiTopicInfo {
+  id: string; // ex: 'tema_a1'
+  ambit: TopicAmbitCategory;
+  ambitName: string;
+  code: string; // ex: 'A.1'
+  title: string;
+  subtitle: string;
+  description: string;
+  icon: string;
+  recommendedQuestions: number;
+  subtopics?: CamiTopicSubtopic[];
+}
+
+export interface StudyMaterial {
+  id: string;
+  titol: string;
+  descripcio: string;
+  format: 'pdf' | 'docx' | 'pptx' | 'txt' | 'link';
+  ambit: string;
+  temaAssociat?: string;
+  preuMerits: number;
+  arxiuUrl: string; // URL pública de descàrrega o visualització
+  estat: 'actiu' | 'proximament' | 'ocult';
+  creadorEmail?: string;
+  dataCreacio?: string;
+  tamanyText?: string; // ex: '2.4 MB' o '45 pàgines'
 }
 
 export interface NotificationPreferences {
@@ -74,7 +135,7 @@ export const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferences = {
 
 export interface InAppNotification {
   id: string;
-  type: 'turn_notification' | 'match_challenge' | 'defeat_revenge' | 'oca_overtake' | 'system';
+  type: 'turn_notification' | 'match_challenge' | 'defeat_revenge' | 'oca_overtake' | 'system' | 'toc_alert';
   matchId?: string;
   ambitId?: string;
   fromUid: string;
@@ -168,6 +229,7 @@ export interface FinishedDuelResult {
 
 export interface AppSectionConfig {
   campanya: string;
+  cami_ispc?: string;
   duels: string;
   tienda: string;
   repas: string;
@@ -199,6 +261,8 @@ export interface Question {
   ambit: QuestionAmbit;
   seccio: string;
   temaId?: string;
+  apartatId?: string;
+  apartat?: string;
   pregunta: string;
   opcions: string[];
   resposta: number; // 0, 1, 2, 3
@@ -257,6 +321,9 @@ export interface DuelGame {
   botAccuracy?: number;
   lastUpdated: number;
   shareCode: string;
+  lastTocAt?: number;
+  lastTocFrom?: string;
+  lastTocUid?: string;
 }
 
 export interface HeadToHeadRecord {

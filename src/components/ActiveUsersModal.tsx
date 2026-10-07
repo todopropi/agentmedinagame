@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { UserProfile, DuelGame } from '../types';
 import { getActiveUsers, searchUsers, getAllUsersList, createDirectChallengeGame } from '../firebase';
 import { ShieldRenderer } from './ShieldRenderer';
@@ -9,11 +9,8 @@ import {
   Radio, 
   Swords, 
   X, 
-  Shield, 
   Mail, 
-  Clock, 
-  Sparkles,
-  ChevronRight,
+  Zap,
   Info
 } from 'lucide-react';
 
@@ -34,11 +31,84 @@ export const ActiveUsersModal: React.FC<ActiveUsersModalProps> = ({
   const [activeUsers, setActiveUsers] = useState<UserProfile[]>([]);
   const [searchResults, setSearchResults] = useState<UserProfile[]>([]);
   const [allUsers, setAllUsers] = useState<UserProfile[]>([]);
-  const [activeTab, setActiveTab] = useState<'active' | 'search' | 'all'>('active');
+  const [activeTab, setActiveTab] = useState<'active' | 'fast' | 'all'>('active');
   const [loading, setLoading] = useState(false);
   const [challengingUid, setChallengingUid] = useState<string | null>(null);
 
-  // Load active and all users on open
+  // Helper per conèixer la velocitat de resposta i activitat d'un oponent
+  const getUserSpeedInfo = (target: UserProfile) => {
+    const lastTime = target.lastActive || target.lastLogin;
+    const now = Date.now();
+    // Només es considera 'en línia' si té activitat confirmada fa menys de 5 minuts
+    const isOnline = Boolean(target.isOnline) && Boolean(lastTime && (now - lastTime) < 5 * 60 * 1000);
+
+    if (isOnline) {
+      return {
+        isOnline: true,
+        speedLabel: '⚡ Molt Ràpid (<2h)',
+        speedBadgeClass: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
+        description: '🟢 Actiu ara • Respon ràpidament',
+        isFast: true
+      };
+    }
+
+    if (lastTime) {
+      const diffHours = (now - lastTime) / (3600 * 1000);
+      const diffDays = Math.floor(diffHours / 24);
+
+      if (diffHours < 2) {
+        return {
+          isOnline: false,
+          speedLabel: '⚡ Molt Ràpid (<2h)',
+          speedBadgeClass: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
+          description: 'Actiu fa menys de 2 hores',
+          isFast: true
+        };
+      } else if (diffHours < 12) {
+        return {
+          isOnline: false,
+          speedLabel: '⚡ Ràpid (avui)',
+          speedBadgeClass: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
+          description: `Actiu fa ${Math.floor(diffHours)}h`,
+          isFast: true
+        };
+      } else if (diffHours < 24) {
+        return {
+          isOnline: false,
+          speedLabel: '⏱️ Actiu (<24h)',
+          speedBadgeClass: 'bg-sky-500/20 text-sky-300 border-sky-500/30',
+          description: `Actiu fa ${Math.floor(diffHours)}h`,
+          isFast: false
+        };
+      } else if (diffDays <= 3) {
+        return {
+          isOnline: false,
+          speedLabel: '⏱️ Actiu (2-3 dies)',
+          speedBadgeClass: 'bg-slate-800 text-slate-300 border-slate-700',
+          description: `Actiu fa ${diffDays} dies`,
+          isFast: false
+        };
+      } else {
+        return {
+          isOnline: false,
+          speedLabel: '🐢 Pausat (>3 dies)',
+          speedBadgeClass: 'bg-slate-900 text-slate-400 border-slate-800',
+          description: `Inactiu fa ${diffDays} dies`,
+          isFast: false
+        };
+      }
+    }
+
+    return {
+      isOnline: false,
+      speedLabel: '⏱️ Actiu (<24h)',
+      speedBadgeClass: 'bg-sky-500/20 text-sky-300 border-sky-500/30',
+      description: 'Actiu recentment',
+      isFast: false
+    };
+  };
+
+  // Carregar usuaris en obrir
   useEffect(() => {
     if (!isOpen) return;
 
@@ -61,7 +131,7 @@ export const ActiveUsersModal: React.FC<ActiveUsersModalProps> = ({
     loadData();
   }, [isOpen, currentUser.uid]);
 
-  // Handle Search Input
+  // Cerca d'usuaris
   useEffect(() => {
     if (!searchTerm.trim()) {
       setSearchResults([]);
@@ -83,6 +153,18 @@ export const ActiveUsersModal: React.FC<ActiveUsersModalProps> = ({
     return () => clearTimeout(timer);
   }, [searchTerm, currentUser.uid]);
 
+  // Filtre intel·ligent segons pestanya
+  const fastUsers = useMemo(() => {
+    return allUsers.filter(u => getUserSpeedInfo(u).isFast);
+  }, [allUsers]);
+
+  const displayedList = useMemo(() => {
+    if (searchTerm.trim()) return searchResults;
+    if (activeTab === 'active') return activeUsers;
+    if (activeTab === 'fast') return fastUsers;
+    return allUsers;
+  }, [searchTerm, activeTab, searchResults, activeUsers, fastUsers, allUsers]);
+
   if (!isOpen) return null;
 
   const handleChallenge = async (targetUser: UserProfile) => {
@@ -99,12 +181,6 @@ export const ActiveUsersModal: React.FC<ActiveUsersModalProps> = ({
     }
   };
 
-  const displayedList = searchTerm.trim() 
-    ? searchResults 
-    : activeTab === 'active' 
-      ? activeUsers 
-      : allUsers;
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
       <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
@@ -118,7 +194,7 @@ export const ActiveUsersModal: React.FC<ActiveUsersModalProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="text-base sm:text-lg font-black text-white">
-                  Opositors Actius & Cerca de Rivals
+                  Opositors Actius & Velocitat de Resposta
                 </h3>
                 <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[10px] font-black uppercase tracking-wider flex items-center gap-1">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
@@ -126,7 +202,7 @@ export const ActiveUsersModal: React.FC<ActiveUsersModalProps> = ({
                 </span>
               </div>
               <p className="text-xs text-slate-400">
-                Troba companys d'oposició connectats o cerca per correu i TIP policial
+                Consulta qui respon més ràpid als duels (&lt;2h) per jugar partides dinàmiques
               </p>
             </div>
           </div>
@@ -156,38 +232,50 @@ export const ActiveUsersModal: React.FC<ActiveUsersModalProps> = ({
             {searchTerm && (
               <button
                 onClick={() => setSearchTerm('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white text-xs"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white text-xs cursor-pointer"
               >
                 ✕
               </button>
             )}
           </div>
 
-          {/* Sub-tabs when not searching */}
+          {/* Sub-tabs quan no se cerca */}
           {!searchTerm.trim() && (
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 overflow-x-auto pb-1 text-xs">
               <button
                 onClick={() => setActiveTab('active')}
-                className={`flex-1 py-1.5 px-3 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                className={`py-1.5 px-3 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap ${
                   activeTab === 'active'
-                    ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
+                    ? 'bg-emerald-500 text-slate-950 shadow-md font-black'
                     : 'bg-slate-800/60 text-slate-400 hover:text-slate-200 border border-transparent'
                 }`}
               >
                 <span className="w-2 h-2 rounded-full bg-emerald-400" />
-                <span>En Línia Ara ({activeUsers.length})</span>
+                <span>En Línia ({activeUsers.length})</span>
+              </button>
+
+              <button
+                onClick={() => setActiveTab('fast')}
+                className={`py-1.5 px-3 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap ${
+                  activeTab === 'fast'
+                    ? 'bg-amber-500 text-slate-950 shadow-md font-black'
+                    : 'bg-slate-800/60 text-slate-400 hover:text-slate-200 border border-transparent'
+                }`}
+              >
+                <Zap className="w-3.5 h-3.5" />
+                <span>Més Ràpids &lt;2h ({fastUsers.length})</span>
               </button>
 
               <button
                 onClick={() => setActiveTab('all')}
-                className={`flex-1 py-1.5 px-3 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                className={`py-1.5 px-3 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap ${
                   activeTab === 'all'
-                    ? 'bg-sky-500/20 text-sky-400 border border-sky-500/40'
+                    ? 'bg-sky-500 text-slate-950 shadow-md font-black'
                     : 'bg-slate-800/60 text-slate-400 hover:text-slate-200 border border-transparent'
                 }`}
               >
                 <Users className="w-3.5 h-3.5" />
-                <span>Tots els Registrats ({allUsers.length})</span>
+                <span>Tots ({allUsers.length})</span>
               </button>
             </div>
           )}
@@ -197,7 +285,7 @@ export const ActiveUsersModal: React.FC<ActiveUsersModalProps> = ({
         <div className="px-4 py-2 bg-sky-950/30 border-b border-sky-900/40 flex items-center gap-2 text-[11px] text-sky-300">
           <Info className="w-4 h-4 shrink-0 text-sky-400" />
           <span>
-            <b>Com funciona el registre:</b> Cada usuari que entra amb Google o correu es sincronitza al cens d'aspirants. Pots cercar-lo pel seu correu complet o nom per reptar-lo directament.
+            <b>Indicador de resposta:</b> Els oponents amb l'etiqueta <b>⚡ Molt Ràpid</b> solen contestar en menys de 2 hores. Cada duel té un límit màxim d'1 setmana per torn abans de donar la victòria per inactivitat.
           </span>
         </div>
 
@@ -206,21 +294,21 @@ export const ActiveUsersModal: React.FC<ActiveUsersModalProps> = ({
           {loading ? (
             <div className="py-12 text-center text-slate-400 space-y-2">
               <div className="w-6 h-6 border-2 border-sky-500 border-t-transparent rounded-full animate-spin mx-auto" />
-              <p className="text-xs">Sincronitzant aspirants...</p>
+              <p className="text-xs">Sincronitzant opositors i velocitat de resposta...</p>
             </div>
           ) : displayedList.length === 0 ? (
             <div className="py-12 text-center text-slate-500 space-y-2">
               <Users className="w-10 h-10 mx-auto text-slate-600" />
               <p className="text-xs sm:text-sm font-bold text-slate-400">
-                {searchTerm ? `No s'ha trobat cap opositor amb "${searchTerm}"` : "No hi ha usuaris disponibles en aquest moment."}
+                {searchTerm ? `No s'ha trobat cap opositor amb "${searchTerm}"` : "No hi ha usuaris disponibles en aquesta categoria."}
               </p>
               <p className="text-[11px] text-slate-500 max-w-xs mx-auto">
-                {searchTerm ? "Comprova que el correu o nom estigui ben escrit o prova amb una paraula més curta." : "Convida altres aspirants compartint el teu codi de sala!"}
+                {searchTerm ? "Comprova que el correu o nom estigui ben escrit." : "Tots els opositors registrats apareixen a la pestanya 'Tots'."}
               </p>
             </div>
           ) : (
             displayedList.map((targetUser) => {
-              const isOnline = targetUser.isOnline === true || (targetUser.lastActive && (Date.now() - targetUser.lastActive) < 30 * 60 * 1000);
+              const speedInfo = getUserSpeedInfo(targetUser);
               const isChallenging = challengingUid === targetUser.uid;
 
               return (
@@ -232,9 +320,9 @@ export const ActiveUsersModal: React.FC<ActiveUsersModalProps> = ({
                   <div className="flex items-center gap-3 min-w-0">
                     <div className="relative shrink-0">
                       <ShieldRenderer shieldId={targetUser.equippedShieldId} size={42} glow={false} />
-                      {isOnline && (
+                      {speedInfo.isOnline && (
                         <span 
-                          className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-emerald-500 border-2 border-slate-950" 
+                          className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-emerald-500 border-2 border-slate-950 animate-pulse" 
                           title="Connectat ara"
                         />
                       )}
@@ -242,33 +330,33 @@ export const ActiveUsersModal: React.FC<ActiveUsersModalProps> = ({
 
                     <div className="min-w-0">
                       <div className="flex items-center gap-1.5 flex-wrap">
-                        <h4 className="text-xs sm:text-sm font-black text-white truncate max-w-[150px] sm:max-w-[220px]">
+                        <h4 className="text-xs sm:text-sm font-black text-white truncate max-w-[140px] sm:max-w-[200px]">
                           {targetUser.displayName}
                         </h4>
-                        {isOnline ? (
-                          <span className="text-[9px] font-black px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                            EN LÍNIA
-                          </span>
-                        ) : (
-                          <span className="text-[9px] font-medium px-1.5 py-0.2 rounded bg-slate-800 text-slate-400">
-                            Desconnectat
-                          </span>
-                        )}
+                        
+                        {/* Etiqueta de Velocitat de Resposta */}
+                        <span className={`text-[9px] font-black px-1.5 py-0.5 rounded border ${speedInfo.speedBadgeClass}`}>
+                          {speedInfo.speedLabel}
+                        </span>
                       </div>
 
                       <div className="text-[11px] text-slate-400 flex items-center gap-2 mt-0.5 flex-wrap">
-                        <span className="text-amber-400 font-semibold">{targetUser.rank.name}</span>
+                        <span className="text-amber-400 font-semibold">{targetUser.rank?.name || targetUser.rank?.title || 'Aspirant'}</span>
                         <span className="text-slate-600">•</span>
-                        <span className="font-mono text-slate-300">{targetUser.xp.toLocaleString()} XP</span>
+                        <span className="font-mono text-slate-300">{(targetUser.xp || 0).toLocaleString()} XP</span>
                         {targetUser.email && (
                           <>
                             <span className="text-slate-600 hidden xs:inline">•</span>
-                            <span className="text-slate-500 text-[10px] truncate max-w-[140px] hidden xs:inline flex items-center gap-1">
+                            <span className="text-slate-500 text-[10px] truncate max-w-[130px] hidden xs:inline flex items-center gap-1">
                               <Mail className="w-2.5 h-2.5" />
                               {targetUser.email}
                             </span>
                           </>
                         )}
+                      </div>
+
+                      <div className="text-[10px] text-slate-500 mt-0.5">
+                        {speedInfo.description}
                       </div>
                     </div>
                   </div>

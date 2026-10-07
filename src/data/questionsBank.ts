@@ -1,4 +1,5 @@
 import { Question, QuestionAmbit } from '../types';
+import { CAMI_REAL_QUESTIONS } from './camiRealQuestions';
 import { 
   syncSupabaseCustomQuestions, 
   fetchSupabaseCustomQuestions,
@@ -7,8 +8,8 @@ import {
   fetchQuestionsFromSupabaseTable
 } from '../../supabase';
 
-// Banc de preguntes dinàmic en memòria (protegit: no emmagatzema preguntes en text pla al codi)
-export let QUESTIONS_BANK: Question[] = [];
+// Banc de preguntes oficial i dinàmic en memòria
+export let QUESTIONS_BANK: Question[] = [...CAMI_REAL_QUESTIONS];
 
 // Cache de sessió per a velocitat instantània sense re-descarregar constantment
 if (typeof window !== 'undefined') {
@@ -17,7 +18,11 @@ if (typeof window !== 'undefined') {
     if (cached) {
       const parsed = JSON.parse(cached);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        QUESTIONS_BANK = parsed;
+        // Combinar preservant sempre les preguntes oficials del Camí a l'ISPC
+        const map = new Map<string, Question>();
+        CAMI_REAL_QUESTIONS.forEach(q => map.set(q.id, q));
+        parsed.forEach((q: Question) => map.set(q.id, q));
+        QUESTIONS_BANK = Array.from(map.values());
         (window as any).bancoPreguntes = QUESTIONS_BANK;
       }
     }

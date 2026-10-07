@@ -56,6 +56,7 @@ interface ModeCampanyaProps {
   onSaveQuestionToggle: (questionId: string) => void;
   onUnlockShield?: (shieldId: string) => void;
   onUpdateWildcards?: (delta: number) => void;
+  onMinigameActiveChange?: (isActive: boolean) => void;
 }
 
 // 150 Caselles totals repartides en 3 etapes
@@ -134,7 +135,8 @@ export const ModeCampanya: React.FC<ModeCampanyaProps> = ({
   onUpdateUserStats,
   onSaveQuestionToggle,
   onUnlockShield,
-  onUpdateWildcards
+  onUpdateWildcards,
+  onMinigameActiveChange
 }) => {
   const [selectedAmbit, setSelectedAmbit] = useState<QuestionAmbit>('Àmbit A');
   const [boardProgress, setBoardProgress] = useState<BoardProgression>(() => {
@@ -170,6 +172,17 @@ export const ModeCampanya: React.FC<ModeCampanyaProps> = ({
   const [showOficinaModal, setShowOficinaModal] = useState<boolean>(false);
   const [showCircuitModal, setShowCircuitModal] = useState<boolean>(false);
   const [showTorreModal, setShowTorreModal] = useState<boolean>(false);
+
+  // Notificar a App.tsx si hi ha un minijoc o pregunta en curs (mode No Molestar per a tocs de duel)
+  useEffect(() => {
+    const isBusy = Boolean(showOficinaModal || showCircuitModal || showTorreModal || activeSession);
+    (window as any).__IS_MINIGAME_ACTIVE__ = isBusy;
+    onMinigameActiveChange?.(isBusy);
+    return () => {
+      (window as any).__IS_MINIGAME_ACTIVE__ = false;
+      onMinigameActiveChange?.(false);
+    };
+  }, [showOficinaModal, showCircuitModal, showTorreModal, activeSession, onMinigameActiveChange]);
 
   // Admin role management modals
   const [adminRoleEditTile, setAdminRoleEditTile] = useState<number | null>(null);
