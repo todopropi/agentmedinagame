@@ -60,6 +60,43 @@ export function getQuestionsByAmbit(ambit: QuestionAmbit | string): Question[] {
 }
 
 /**
+ * Barrejador aleatori d'opcions (Fisher-Yates) que garanteix:
+ * 1. Distribució 100% equitativa (25% cadascuna a A, B, C i D) de la resposta correcta.
+ * 2. Eliminació total de qualsevol biaix posicional (com el biaix recurrent de la resposta B).
+ * 3. Ruptura de patrons visuals (com ara triar la més llarga o la B sense llegir),
+ *    fomentant un estudi crític i rigorós com a l'examen oficial.
+ */
+export function shuffleQuestionOptions(question: Question): Question {
+  if (!question || !Array.isArray(question.opcions) || question.opcions.length <= 1) {
+    return question;
+  }
+
+  const origResp = typeof question.resposta === 'number'
+    ? question.resposta
+    : parseInt(String(question.resposta), 10) || 0;
+  const correctText = question.opcions[origResp];
+
+  const items = question.opcions.map((text, idx) => ({
+    text,
+    isCorrect: idx === origResp || text === correctText
+  }));
+
+  // Fisher-Yates shuffle uniforme
+  for (let i = items.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [items[i], items[j]] = [items[j], items[i]];
+  }
+
+  const newCorrectIdx = items.findIndex(item => item.isCorrect);
+
+  return {
+    ...question,
+    opcions: items.map(item => item.text),
+    resposta: newCorrectIdx >= 0 ? newCorrectIdx : 0
+  };
+}
+
+/**
  * Seleccionador Intel·ligent de Preguntes (Anti-repetició + Repàs Espaiat):
  * 1. Prioritat 1 (80% probabilitat): Preguntes VÍRGENS (que l'opositor encara no ha vist).
  * 2. Prioritat 2 (20% probabilitat): Preguntes del SAC DE FALLADES o repàs de consolidació.
@@ -376,14 +413,41 @@ export function getQuestionsForTopicOrSubtopic(topicId: string, subtopicId?: str
   }
 
   if (topicId === 'tema_d1') {
-    return QUESTIONS_BANK.filter(q => 
+    const dList = QUESTIONS_BANK.filter(q => 
       q.id.startsWith('ACT26_') || 
       q.id.startsWith('Actualitat_') || 
       q.id.startsWith('cami_d') || 
       q.ambit === 'Actualitat' || 
       q.ambit === 'Àmbit D' || 
-      q.seccio?.includes('Actualitat')
+      q.seccio?.includes('Actualitat') ||
+      q.temaId === 'tema_d1'
     );
+    if (dList.length > 0) return dList;
+  }
+
+  // Cerca flexible per codi (ex: 'A.1', 'A1', 'B.2', etc.)
+  const match = topicId.match(/^tema_([a-d])([0-9]+)$/i);
+  if (match) {
+    const letter = match[1].toUpperCase();
+    const num = match[2];
+    const codeWithDot = `${letter}.${num}`;
+    const codeNoDot = `${letter}${num}`;
+    
+    const flexibleList = QUESTIONS_BANK.filter(q => {
+      if (q.temaId === topicId) return true;
+      if (q.id.toLowerCase().includes(topicId.toLowerCase())) return true;
+      if (q.id.toUpperCase().startsWith(`${codeNoDot}_`) || q.id.toUpperCase().startsWith(`${codeWithDot}_`)) return true;
+      if (q.id.toUpperCase().startsWith(`MOSSOS_${codeNoDot}_`) || q.id.toUpperCase().startsWith(`MOSSOS_${codeWithDot}_`)) return true;
+      if (q.guiaTema && (q.guiaTema.includes(codeWithDot) || q.guiaTema.includes(codeNoDot))) return true;
+      if (q.seccio && (q.seccio.includes(codeWithDot) || q.seccio.includes(codeNoDot))) return true;
+      return false;
+    });
+    if (flexibleList.length > 0) return flexibleList;
+
+    // Fallback intel·ligent per àmbit oficial si no hi ha preguntes específiques
+    const ambitName = letter === 'A' ? 'Àmbit A' : letter === 'B' ? 'Àmbit B' : letter === 'C' ? 'Àmbit C' : 'Àmbit D';
+    const ambitQuestions = QUESTIONS_BANK.filter(q => q.ambit === ambitName || (letter === 'D' && q.ambit === 'Actualitat'));
+    if (ambitQuestions.length > 0) return ambitQuestions;
   }
 
   // Fallback per temaId directe

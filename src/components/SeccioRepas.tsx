@@ -40,7 +40,8 @@ interface SeccioRepasProps {
     failedId?: string, 
     savedId?: string,
     answeredId?: string,
-    isCorrect?: boolean
+    isCorrect?: boolean,
+    removeFailedId?: string
   ) => void;
 }
 
@@ -117,12 +118,13 @@ export const SeccioRepas: React.FC<SeccioRepasProps> = ({
 
     if (isCorrect) {
       if (testMode === 'superacio') {
-        onRemoveFailedQuestion(q.id);
         setTestScore(prev => ({ ...prev, correct: prev.correct + 1, removedCount: prev.removedCount + 1 }));
+        // Esborrat atòmic garantit: es passa q.id com a removeFailedId a onUpdateStats per evitar condicions de cursa
+        onUpdateStats(15, 10, undefined, undefined, q.id, true, q.id);
       } else {
         setTestScore(prev => ({ ...prev, correct: prev.correct + 1 }));
+        onUpdateStats(15, 10, undefined, undefined, q.id, true);
       }
-      onUpdateStats(15, 10, undefined, undefined, q.id, true);
     } else {
       setTestScore(prev => ({ ...prev, wrong: prev.wrong + 1 }));
       onUpdateStats(0, 0, q.id, undefined, q.id, false);
@@ -151,8 +153,8 @@ export const SeccioRepas: React.FC<SeccioRepasProps> = ({
   const handlePracticeOutcome = (isCorrect: boolean) => {
     if (!activePracticeQuestion) return;
     if (isCorrect) {
-      onRemoveFailedQuestion(activePracticeQuestion.id);
-      onUpdateStats(15, 10, undefined, undefined, activePracticeQuestion.id, true);
+      // Esborrat atòmic garantit de la pregunta practicada
+      onUpdateStats(15, 10, undefined, undefined, activePracticeQuestion.id, true, activePracticeQuestion.id);
     } else {
       onUpdateStats(0, 0, activePracticeQuestion.id, undefined, activePracticeQuestion.id, false);
     }

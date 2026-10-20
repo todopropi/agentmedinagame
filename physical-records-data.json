@@ -1,0 +1,16 @@
+{
+  "opossscar@gmail.com": {
+    "userId": "test_user_1",
+    "email": "opossscar@gmail.com",
+    "records": [],
+    "sessions": [],
+    "updatedAt": 1792420131613
+  },
+  "test_user_1": {
+    "userId": "test_user_1",
+    "email": "opossscar@gmail.com",
+    "records": [],
+    "sessions": [],
+    "updatedAt": 1792420131613
+  }
+}

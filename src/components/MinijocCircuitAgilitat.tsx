@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Question, QuestionAmbit } from '../types';
-import { getQuestionsByAmbit } from '../data/questionsBank';
+import { getQuestionsByAmbit, shuffleQuestionOptions } from '../data/questionsBank';
 import { AudioEngine } from '../utils/audio';
 import confetti from 'canvas-confetti';
 import { 
@@ -44,7 +44,7 @@ export const MinijocCircuitAgilitat: React.FC<MinijocCircuitAgilitatProps> = ({
   const [questions] = useState<Question[]>(() => {
     const pool = getQuestionsByAmbit(ambit);
     const shuffled = [...pool].sort(() => 0.5 - Math.random());
-    return shuffled.slice(0, TOTAL_QUESTIONS);
+    return shuffled.slice(0, TOTAL_QUESTIONS).map(q => shuffleQuestionOptions(q));
   });
 
   const [currentQIndex, setCurrentQIndex] = useState(0);

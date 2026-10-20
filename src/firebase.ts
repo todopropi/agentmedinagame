@@ -168,6 +168,8 @@ export function createDefaultProfile(uid: string, email: string, displayName: st
     unlockedShieldIds: [DEFAULT_SHIELD_ID],
     failedQuestionIds: [],
     savedQuestionIds: [],
+    unlockedMaterialIds: [],
+    purchasedMaterialIds: [],
     isAdmin,
     createdAt: Date.now(),
     lastLogin: Date.now(),
@@ -289,13 +291,30 @@ export function initAuthListener(callback: (user: UserProfile | null) => void): 
             const snap = await getDoc(doc(db, 'users', fbUser.uid));
             if (snap.exists()) {
               const prof = snap.data() as UserProfile;
-              saveStoredLocalUser(prof);
-              callback(prof);
+              const localStored = getStoredLocalUser(fbUser.uid);
+              const mergedProf: UserProfile = {
+                ...prof,
+                merits: prof.merits !== undefined ? prof.merits : (localStored?.merits ?? 25),
+                unlockedMaterialIds: Array.from(new Set([
+                  ...(prof.unlockedMaterialIds || []),
+                  ...(localStored?.unlockedMaterialIds || [])
+                ])),
+                purchasedMaterialIds: Array.from(new Set([
+                  ...(prof.purchasedMaterialIds || []),
+                  ...(localStored?.purchasedMaterialIds || [])
+                ]))
+              };
+              saveStoredLocalUser(mergedProf);
+              callback(mergedProf);
               return;
             }
           } catch (err) {}
           const localStored = getStoredLocalUser(fbUser.uid);
-          const fallbackDisplayName = fbUser.displayName || localStored?.displayName || (fbUser.email ? fbUser.email.split('@')[0] : 'Aspirant Medina');
+          if (localStored) {
+            callback(localStored);
+            return;
+          }
+          const fallbackDisplayName = fbUser.displayName || (fbUser.email ? fbUser.email.split('@')[0] : 'Aspirant Medina');
           const newProf = createDefaultProfile(
             fbUser.uid,
             fbUser.email || 'aspirant@agentmedina.cat',
@@ -331,8 +350,7 @@ export async function loadUserProfile(uid: string): Promise<UserProfile | null> 
 }
 
 export async function syncUserProfileUpdate(updated: Partial<UserProfile> & { uid: string }): Promise<UserProfile> {
-  const current = getStoredLocalUser(updated.uid);
-  if (!current) throw new Error('No user logged in');
+  const current = getStoredLocalUser(updated.uid) || (updated as UserProfile);
 
   const merged: UserProfile = { ...current, ...updated };
   if (updated.xp !== undefined) {

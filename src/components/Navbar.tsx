@@ -27,7 +27,9 @@ import {
   BarChart2,
   Compass,
   Flame,
-  X
+  X,
+  Dumbbell,
+  Layers
 } from 'lucide-react';
 import { STORE_UNITS_LIST } from '../data/badges';
 import { QUESTIONS_BANK } from '../data/questionsBank';
@@ -46,6 +48,8 @@ interface NavbarProps {
   onOpenNotificationsModal?: () => void;
   onOpenLegalModal?: () => void;
   sectionLabels?: Record<string, string>;
+  onSwitchToFisiques?: () => void;
+  onOpenHub?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({ 
@@ -59,7 +63,9 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenSubscriptionModal,
   onOpenNotificationsModal,
   onOpenLegalModal,
-  sectionLabels
+  sectionLabels,
+  onSwitchToFisiques,
+  onOpenHub
 }) => {
   const [isRanksOpen, setIsRanksOpen] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
@@ -199,8 +205,24 @@ export const Navbar: React.FC<NavbarProps> = ({
               </div>
             </div>
 
-            {/* Right: Racha + Mèrits Chip + Notificacions + User Avatar */}
+            {/* Right: Mode Físiques + Racha + Mèrits Chip + Notificacions + User Avatar */}
             <div className="flex items-center gap-1.5 sm:gap-2">
+              {/* Botó Mode Físiques (Mobile) */}
+              {onSwitchToFisiques && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    AudioEngine.playClick();
+                    onSwitchToFisiques();
+                  }}
+                  title="Anar a Mode Físiques"
+                  className="flex items-center gap-1 px-2 py-1 bg-gradient-to-r from-amber-500 to-amber-600 text-slate-950 rounded-full text-[10px] font-black shadow-sm active:scale-95 touch-manipulation cursor-pointer"
+                >
+                  <Dumbbell className="w-3 h-3 fill-current" />
+                  <span>Físiques</span>
+                </button>
+              )}
+
               {/* Racha Flama Diària */}
               <div 
                 title={`Racha diària: ${user.streakCount || 0} dies consecutius (Mínim 5 preguntes/dia)`}
@@ -368,6 +390,37 @@ export const Navbar: React.FC<NavbarProps> = ({
                   />
                 </div>
               </div>
+
+              {/* Botó Mode Físiques (Desktop) */}
+              {onSwitchToFisiques && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    AudioEngine.playClick();
+                    onSwitchToFisiques();
+                  }}
+                  title="Anar a Mode Físiques (Press de Banca, Circuït i Cursa Llançadora)"
+                  className="px-3 py-1.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer shadow-md shadow-amber-500/20 active:scale-95"
+                >
+                  <Dumbbell className="w-3.5 h-3.5 fill-current" />
+                  <span>MODE FÍSIQUES</span>
+                </button>
+              )}
+
+              {/* Botó Canviar a Selector de Modes (Hub) */}
+              {onOpenHub && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    AudioEngine.playClick();
+                    onOpenHub();
+                  }}
+                  title="Canviar de mode (Tots els modes)"
+                  className="p-2 bg-slate-900 hover:bg-slate-800 text-sky-400 hover:text-white rounded-xl border border-slate-800 transition-colors cursor-pointer"
+                >
+                  <Layers className="w-4 h-4" />
+                </button>
+              )}
 
               {/* Subscription Status Button */}
               {onOpenSubscriptionModal && (

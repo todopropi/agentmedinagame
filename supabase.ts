@@ -180,9 +180,18 @@ export async function syncSupabaseUserGameData(userId: string, data: Record<stri
     // Obtenir l'estat previ per no perdre preguntes fallades en actualitzacions parcials
     const prev = await fetchSupabaseUserGameData(userId);
 
+    const mergedMaterialIds = Array.from(new Set([
+      ...(Array.isArray(prev?.unlockedMaterialIds) ? prev.unlockedMaterialIds : []),
+      ...(Array.isArray(prev?.purchasedMaterialIds) ? prev.purchasedMaterialIds : []),
+      ...(Array.isArray(data?.unlockedMaterialIds) ? data.unlockedMaterialIds : []),
+      ...(Array.isArray(data?.purchasedMaterialIds) ? data.purchasedMaterialIds : [])
+    ]));
+
     const mergedState = {
       ...(prev || {}),
       ...data,
+      unlockedMaterialIds: mergedMaterialIds,
+      purchasedMaterialIds: mergedMaterialIds,
       updated_at: Date.now()
     };
 
@@ -948,6 +957,114 @@ export async function syncSupabaseStudyMaterials(materials: any[]): Promise<bool
   } catch (err) {
     console.warn('Exception syncing study materials to Supabase:', err);
     return false;
+  }
+}
+
+/**
+ * Guarda la compra/desbloqueig d'un material d'estudi al núvol (Supabase)
+ * i a la memòria local persistent de manera que MAI es perdi al recarregar la pàgina.
+ */
+export async function syncUserStudyMaterialPurchase(userId: string, materialId: string): Promise<string[]> {
+  try {
+    if (!userId || !materialId) return [];
+
+    // 1. Guardar a localStorage clau backup dedicada
+    const backupKey = `agent_medina_purchased_materials_${userId}`;
+    let localList: string[] = [];
+    try {
+      const raw = localStorage.getItem(backupKey);
+      localList = raw ? JSON.parse(raw) : [];
+    } catch {}
+    const updatedList = Array.from(new Set([...localList, materialId]));
+    try {
+      localStorage.setItem(backupKey, JSON.stringify(updatedList));
+    } catch {}
+
+    // 2. Guardar a matches amb id dedicada 'user_materials_${userId}'
+    const recordId = `user_materials_${userId}`;
+    let cloudList: string[] = [];
+    try {
+      const { data } = await supabase
+        .from('matches')
+        .select('state')
+        .eq('id', recordId)
+        .maybeSingle();
+      if (data?.state?.materialIds && Array.isArray(data.state.materialIds)) {
+        cloudList = data.state.materialIds;
+      }
+    } catch {}
+
+    const allMaterials = Array.from(new Set([...updatedList, ...cloudList, materialId]));
+
+    await supabase
+      .from('matches')
+      .upsert({
+        id: recordId,
+        player1_id: userId,
+        player2_id: 'study_materials',
+        current_turn: userId,
+        status: 'active',
+        score_p1: allMaterials.length,
+        score_p2: 0,
+        state: { materialIds: allMaterials, updated_at: Date.now() }
+      }, { onConflict: 'id' });
+
+    // 3. També actualitzar estat de joc general
+    await syncSupabaseUserProgression(userId, {
+      unlockedMaterialIds: allMaterials,
+      purchasedMaterialIds: allMaterials
+    });
+
+    return allMaterials;
+  } catch (err) {
+    console.warn('syncUserStudyMaterialPurchase exception:', err);
+    return [];
+  }
+}
+
+/**
+ * Recupera tots els materials d'estudi comprats per l'usuari des de múltiples fonts redundants
+ */
+export async function fetchUserPurchasedMaterials(userId: string): Promise<string[]> {
+  try {
+    if (!userId) return [];
+    const list = new Set<string>();
+
+    // 1. Local backup key
+    try {
+      const raw = localStorage.getItem(`agent_medina_purchased_materials_${userId}`);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) parsed.forEach(id => list.add(id));
+      }
+    } catch {}
+
+    // 2. Dedicated matches row
+    try {
+      const { data } = await supabase
+        .from('matches')
+        .select('state')
+        .eq('id', `user_materials_${userId}`)
+        .maybeSingle();
+      if (data?.state?.materialIds && Array.isArray(data.state.materialIds)) {
+        data.state.materialIds.forEach((id: string) => list.add(id));
+      }
+    } catch {}
+
+    // 3. User data in matches
+    try {
+      const matchData = await fetchSupabaseUserGameData(userId);
+      if (Array.isArray(matchData?.unlockedMaterialIds)) {
+        matchData.unlockedMaterialIds.forEach((id: string) => list.add(id));
+      }
+      if (Array.isArray(matchData?.purchasedMaterialIds)) {
+        matchData.purchasedMaterialIds.forEach((id: string) => list.add(id));
+      }
+    } catch {}
+
+    return Array.from(list);
+  } catch (e) {
+    return [];
   }
 }
 
@@ -1827,6 +1944,9 @@ export async function fetchSupabaseUserProgression(userId: string): Promise<any 
   try {
     if (!userId) return null;
 
+    // Recuperar també tots els materials d'estudi comprats persistits
+    const userPurchasedMats = await fetchUserPurchasedMaterials(userId);
+
     // 1. Intentar consultar primer la taula 'user_progression'
     const { data: progRow, error: progErr } = await supabase
       .from('user_progression')
@@ -1836,6 +1956,14 @@ export async function fetchSupabaseUserProgression(userId: string): Promise<any 
 
     if (!progErr && progRow) {
       const matchGameData = await fetchSupabaseUserGameData(userId);
+      const combinedMaterials = Array.from(new Set([
+        ...(Array.isArray(progRow.unlocked_materials) ? progRow.unlocked_materials : []),
+        ...(Array.isArray(progRow.unlocked_material_ids) ? progRow.unlocked_material_ids : []),
+        ...(Array.isArray(matchGameData?.unlockedMaterialIds) ? matchGameData.unlockedMaterialIds : []),
+        ...(Array.isArray(matchGameData?.purchasedMaterialIds) ? matchGameData.purchasedMaterialIds : []),
+        ...userPurchasedMats
+      ]));
+
       return {
         xp: progRow.xp ?? matchGameData?.xp,
         merits: progRow.merits ?? matchGameData?.merits,
@@ -1862,12 +1990,32 @@ export async function fetchSupabaseUserProgression(userId: string): Promise<any 
         savedMnemonicIds: progRow.saved_mnemonic_ids || matchGameData?.savedMnemonicIds || [],
         completedAmbits: progRow.completed_ambits || matchGameData?.completedAmbits || [],
         boardProgress: progRow.board_progress || matchGameData?.boardProgress || {},
+        unlockedMaterialIds: combinedMaterials,
+        purchasedMaterialIds: combinedMaterials,
         updatedAt: progRow.updated_at || matchGameData?.updatedAt
       };
     }
 
     // 2. Fallback a la taula 'matches' (user_data_${userId})
-    return await fetchSupabaseUserGameData(userId);
+    const fallbackGameData = await fetchSupabaseUserGameData(userId);
+    const combinedMaterialsFallback = Array.from(new Set([
+      ...(Array.isArray(fallbackGameData?.unlockedMaterialIds) ? fallbackGameData.unlockedMaterialIds : []),
+      ...(Array.isArray(fallbackGameData?.purchasedMaterialIds) ? fallbackGameData.purchasedMaterialIds : []),
+      ...userPurchasedMats
+    ]));
+
+    if (fallbackGameData) {
+      return {
+        ...fallbackGameData,
+        unlockedMaterialIds: combinedMaterialsFallback,
+        purchasedMaterialIds: combinedMaterialsFallback
+      };
+    }
+
+    return {
+      unlockedMaterialIds: combinedMaterialsFallback,
+      purchasedMaterialIds: combinedMaterialsFallback
+    };
   } catch (err) {
     console.warn('Supabase fetch user_progression exception:', err);
     return null;

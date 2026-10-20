@@ -425,6 +425,165 @@ app.get('/api/apk-info', (req, res) => {
   });
 });
 
+// =================================================================
+// PERSISTÈNCIA AL SERVIDOR: PROVES FÍSIQUES I SIMULACRES
+// Permet que des del mòbil, ordinador o tauleta mai es perdin les dades
+// =================================================================
+const PHYSICAL_DATA_FILE = path.join(process.cwd(), 'physical-records-data.json');
+
+interface UserPhysicalData {
+  userId: string;
+  email: string;
+  records: any[];
+  sessions: any[];
+  updatedAt: number;
+}
+
+let physicalDataStore: Record<string, UserPhysicalData> = {};
+
+function loadPersistedPhysicalData() {
+  try {
+    if (fs.existsSync(PHYSICAL_DATA_FILE)) {
+      const raw = fs.readFileSync(PHYSICAL_DATA_FILE, 'utf-8');
+      physicalDataStore = JSON.parse(raw);
+      console.log(`[PHYSICAL-STORE] 📥 Dades físiques carregades del disc per a ${Object.keys(physicalDataStore).length} perfils.`);
+    }
+  } catch (err) {
+    console.warn('[PHYSICAL-STORE] Error llegint fitxer persistent:', err);
+    physicalDataStore = {};
+  }
+}
+
+function savePersistedPhysicalData() {
+  try {
+    fs.writeFileSync(PHYSICAL_DATA_FILE, JSON.stringify(physicalDataStore, null, 2), 'utf-8');
+  } catch (err) {
+    console.warn('[PHYSICAL-STORE] Error desant fitxer persistent:', err);
+  }
+}
+
+loadPersistedPhysicalData();
+
+function resolveUserPhysicalKey(userId?: string, email?: string): string {
+  if (email && email.trim()) return email.trim().toLowerCase();
+  if (userId && userId.trim()) return userId.trim().toLowerCase();
+  return 'anonymous';
+}
+
+function getUserPhysicalRecordsFromServer(userId?: string, email?: string) {
+  const normEmail = (email || '').trim().toLowerCase();
+  const normUid = (userId || '').trim().toLowerCase();
+
+  const byEmail = normEmail ? physicalDataStore[normEmail] : null;
+  const byUid = normUid ? physicalDataStore[normUid] : null;
+
+  const data = byEmail || byUid || {
+    userId: userId || '',
+    email: email || '',
+    records: [],
+    sessions: [],
+    updatedAt: Date.now()
+  };
+
+  // Assegurar unificació si tant email com uid existeixen
+  if (byEmail && byUid && byEmail !== byUid) {
+    const recordMap = new Map();
+    byEmail.records.forEach((r: any) => recordMap.set(r.id, r));
+    byUid.records.forEach((r: any) => recordMap.set(r.id, r));
+    data.records = Array.from(recordMap.values()).sort((a: any, b: any) => b.createdAt - a.createdAt);
+  }
+
+  return data;
+}
+
+// 1. Obtenir tots els registres físics des del servidor
+app.get('/api/physical-records', (req, res) => {
+  const userId = String(req.query.userId || '');
+  const email = String(req.query.email || '');
+
+  const data = getUserPhysicalRecordsFromServer(userId, email);
+  return res.json({
+    success: true,
+    records: data.records || [],
+    sessions: data.sessions || [],
+    updatedAt: data.updatedAt || Date.now()
+  });
+});
+
+// 2. Sincronitzar (upsert complet) registres físics al servidor
+app.post('/api/physical-records/sync', (req, res) => {
+  const { userId, email, records, sessions } = req.body;
+  if (!userId && !email) {
+    return res.status(400).json({ error: 'Missing userId or email' });
+  }
+
+  const normEmail = (email || '').trim().toLowerCase();
+  const normUid = (userId || '').trim().toLowerCase();
+
+  const existing = getUserPhysicalRecordsFromServer(userId, email);
+  const updatedData: UserPhysicalData = {
+    userId: userId || existing.userId || '',
+    email: email || existing.email || '',
+    records: Array.isArray(records) ? records : (existing.records || []),
+    sessions: Array.isArray(sessions) ? sessions : (existing.sessions || []),
+    updatedAt: Date.now()
+  };
+
+  if (normEmail) physicalDataStore[normEmail] = updatedData;
+  if (normUid) physicalDataStore[normUid] = updatedData;
+
+  savePersistedPhysicalData();
+
+  return res.json({
+    success: true,
+    recordsCount: updatedData.records.length,
+    sessionsCount: updatedData.sessions.length
+  });
+});
+
+// 3. Eliminar directament un registre físic al servidor per ID
+app.delete('/api/physical-records/:id', (req, res) => {
+  const recordId = req.params.id;
+  const userId = String(req.query.userId || req.body.userId || '');
+  const email = String(req.query.email || req.body.email || '');
+
+  const normEmail = (email || '').trim().toLowerCase();
+  const normUid = (userId || '').trim().toLowerCase();
+
+  let deleted = false;
+
+  // Esborrar a totes les claus associades a l'usuari
+  const keysToUpdate = new Set<string>();
+  if (normEmail) keysToUpdate.add(normEmail);
+  if (normUid) keysToUpdate.add(normUid);
+
+  // Si no s'ha trobat cap clau directa, cercar en tots els perfils
+  if (keysToUpdate.size === 0) {
+    for (const key of Object.keys(physicalDataStore)) {
+      keysToUpdate.add(key);
+    }
+  }
+
+  keysToUpdate.forEach(key => {
+    if (physicalDataStore[key]) {
+      const prevLen = physicalDataStore[key].records.length;
+      physicalDataStore[key].records = physicalDataStore[key].records.filter((r: any) => r.id !== recordId);
+      if (physicalDataStore[key].records.length !== prevLen) {
+        deleted = true;
+        physicalDataStore[key].updatedAt = Date.now();
+      }
+    }
+  });
+
+  savePersistedPhysicalData();
+
+  return res.json({
+    success: true,
+    deletedId: recordId,
+    deleted
+  });
+});
+
 async function startServer() {
   const isProd = process.env.NODE_ENV === 'production';
 

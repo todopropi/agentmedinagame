@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Question, QuestionAmbit } from '../types';
-import { getQuestionsByAmbit } from '../data/questionsBank';
+import { getQuestionsByAmbit, shuffleQuestionOptions } from '../data/questionsBank';
 import { AudioEngine } from '../utils/audio';
 import confetti from 'canvas-confetti';
 import { 
@@ -145,7 +145,7 @@ export const MinijocTorreConstruccio: React.FC<MinijocTorreConstruccioProps> = (
   // Pool de preguntes de l'àmbit
   const [questionPool, setQuestionPool] = useState<Question[]>(() => {
     const list = getQuestionsByAmbit(ambit);
-    return [...list].sort(() => 0.5 - Math.random());
+    return [...list].sort(() => 0.5 - Math.random()).map(q => shuffleQuestionOptions(q));
   });
 
   // Fases del joc: INTRO -> QUESTION -> FEEDBACK (Torre + Explicació) -> Següent...

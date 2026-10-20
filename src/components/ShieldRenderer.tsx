@@ -4,7 +4,7 @@ import { SPECIALIZED_SHIELDS } from '../data/badges';
 interface ShieldRendererProps {
   shieldId: string;
   shieldData?: any;
-  size?: number;
+  size?: number | 'xs' | 'sm' | 'md' | 'lg' | 'xl' | string;
   showName?: boolean;
   glow?: boolean;
 }
@@ -24,6 +24,29 @@ export const ShieldRenderer: React.FC<ShieldRendererProps> = ({
   const uid = React.useId().replace(/:/g, '');
   const logoSrc = shield.customLogoUrl || shield.imageUrl;
 
+  // Normalitzar mida numèrica per evitar qualsevol NaN en width/height CSS
+  const numericSize = React.useMemo(() => {
+    if (typeof size === 'string') {
+      switch (size) {
+        case 'xs': return 20;
+        case 'sm': return 32;
+        case 'md': return 48;
+        case 'lg': return 64;
+        case 'xl': return 88;
+        default: {
+          const parsed = parseFloat(size);
+          return !isNaN(parsed) && parsed > 0 ? parsed : 72;
+        }
+      }
+    }
+    if (typeof size === 'number' && !isNaN(size) && size > 0) {
+      return size;
+    }
+    return 72;
+  }, [size]);
+
+  const calculatedHeight = Math.round(numericSize * 1.18);
+
   // Render borderless image if requested by admin
   if (logoSrc && shield.hideBorder) {
     const scale = shield.customLogoScale ?? 1.05;
@@ -36,8 +59,8 @@ export const ShieldRenderer: React.FC<ShieldRendererProps> = ({
         <div 
           className="relative flex items-center justify-center transition-transform hover:scale-105"
           style={{ 
-            width: size, 
-            height: size * 1.18,
+            width: numericSize, 
+            height: calculatedHeight,
             filter: glow 
               ? 'drop-shadow(0 0 14px rgba(234, 179, 8, 0.55)) drop-shadow(0 4px 10px rgba(0,0,0,0.7))'
               : 'drop-shadow(0 4px 8px rgba(0,0,0,0.6))'
@@ -70,8 +93,8 @@ export const ShieldRenderer: React.FC<ShieldRendererProps> = ({
       <div 
         className="relative flex items-center justify-center transition-transform hover:scale-105"
         style={{ 
-          width: size, 
-          height: size * 1.18,
+          width: numericSize, 
+          height: calculatedHeight,
           filter: glow 
             ? 'drop-shadow(0 0 12px rgba(234, 179, 8, 0.45)) drop-shadow(0 4px 6px rgba(0,0,0,0.7))'
             : 'drop-shadow(0 3px 5px rgba(0,0,0,0.65))'

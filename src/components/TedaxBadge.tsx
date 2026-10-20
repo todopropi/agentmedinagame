@@ -7,12 +7,13 @@ interface TedaxBadgeProps {
 }
 
 export const TedaxBadge: React.FC<TedaxBadgeProps> = ({ size = 160, className = '', glow = false }) => {
+  const numericSize = typeof size === 'number' && !isNaN(size) && size > 0 ? size : 160;
   // Parche ovalado oficial negro con borde amarillo, texto "TEDAX NRBQ", 
   // 4 barretas rojas a la izquierda y emblema central (boina roja con espadas cruzadas y llama).
   return (
     <div 
       className={`inline-block relative select-none ${className}`}
-      style={{ width: size, height: size * 0.75 }}
+      style={{ width: numericSize, height: Math.round(numericSize * 0.75) }}
     >
       <svg
         viewBox="0 0 320 240"

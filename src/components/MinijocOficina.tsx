@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Question, QuestionAmbit } from '../types';
-import { getQuestionsByAmbit } from '../data/questionsBank';
+import { getQuestionsByAmbit, shuffleQuestionOptions } from '../data/questionsBank';
 import { AudioEngine } from '../utils/audio';
 import confetti from 'canvas-confetti';
 import { 
@@ -259,7 +259,7 @@ export const MinijocOficina: React.FC<MinijocOficinaProps> = ({
         topicIndex: def.topicIndex,
         code: def.code,
         title: def.title,
-        question: selectedQ,
+        question: selectedQ ? shuffleQuestionOptions(selectedQ) : selectedQ,
         associatedTokenIdx: idx % TOKENS.length,
         destroyedCount: 0,
         isUnlocked: false,

@@ -10,6 +10,8 @@ import {
   syncSupabaseStudyMaterials,
   uploadSupabaseStudyDocument,
   getSignedStudyMaterialUrl,
+  syncUserStudyMaterialPurchase,
+  fetchUserPurchasedMaterials,
   DEFAULT_STUDY_MATERIALS
 } from '../../supabase';
 import { ShieldRenderer } from './ShieldRenderer';
@@ -97,6 +99,51 @@ export const TiendaEscuts: React.FC<TiendaEscutsProps> = ({
     estat: 'actiu',
     tamanyText: ''
   });
+
+  // Estat reactiu de materials desbloquejats (combinant user + localStorage backup + Supabase)
+  const [localPurchasedSet, setLocalPurchasedSet] = useState<Set<string>>(() => {
+    const s = new Set<string>();
+    (user.unlockedMaterialIds || []).forEach(id => s.add(id));
+    (user.purchasedMaterialIds || []).forEach(id => s.add(id));
+    if (user?.uid) {
+      try {
+        const raw = localStorage.getItem(`agent_medina_purchased_materials_${user.uid}`);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) parsed.forEach(id => s.add(id));
+        }
+      } catch {}
+    }
+    return s;
+  });
+
+  // Mantenir sincronitzat amb user prop i Supabase
+  useEffect(() => {
+    if (!user?.uid) return;
+    setLocalPurchasedSet(prev => {
+      const next = new Set(prev);
+      (user.unlockedMaterialIds || []).forEach(id => next.add(id));
+      (user.purchasedMaterialIds || []).forEach(id => next.add(id));
+      try {
+        const raw = localStorage.getItem(`agent_medina_purchased_materials_${user.uid}`);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) parsed.forEach(id => next.add(id));
+        }
+      } catch {}
+      return next;
+    });
+
+    fetchUserPurchasedMaterials(user.uid).then(cloudMats => {
+      if (cloudMats && cloudMats.length > 0) {
+        setLocalPurchasedSet(prev => {
+          const next = new Set(prev);
+          cloudMats.forEach(id => next.add(id));
+          return next;
+        });
+      }
+    }).catch(console.warn);
+  }, [user?.uid, user.unlockedMaterialIds, user.purchasedMaterialIds]);
 
   // Carregar materials d'estudi
   useEffect(() => {
@@ -464,6 +511,7 @@ export const TiendaEscuts: React.FC<TiendaEscutsProps> = ({
     const isAlreadyBought = Boolean(
       user.purchasedMaterialIds?.includes(material.id) ||
       user.unlockedMaterialIds?.includes(material.id) ||
+      localPurchasedSet.has(material.id) ||
       material.preuMerits === 0
     );
 
@@ -479,6 +527,19 @@ export const TiendaEscuts: React.FC<TiendaEscutsProps> = ({
     }
 
     AudioEngine.playCorrect();
+
+    // Actualitzar immediatament a nivell local reactiu i memòria cau
+    setLocalPurchasedSet(prev => new Set(prev).add(material.id));
+    if (user?.uid) {
+      try {
+        const backupKey = `agent_medina_purchased_materials_${user.uid}`;
+        const raw = localStorage.getItem(backupKey);
+        const list = raw ? JSON.parse(raw) : [];
+        localStorage.setItem(backupKey, JSON.stringify(Array.from(new Set([...list, material.id]))));
+      } catch {}
+      syncUserStudyMaterialPurchase(user.uid, material.id).catch(console.warn);
+    }
+
     if (onBuyStudyMaterial) {
       onBuyStudyMaterial(material);
     } else {
@@ -661,16 +722,26 @@ export const TiendaEscuts: React.FC<TiendaEscutsProps> = ({
   const purchasedCount = React.useMemo(() => {
     return studyMaterials.filter(m => 
       (isDocentOrAdmin || m.estat !== 'ocult') && 
-      (user.purchasedMaterialIds?.includes(m.id) || user.unlockedMaterialIds?.includes(m.id) || m.preuMerits === 0)
+      (user.purchasedMaterialIds?.includes(m.id) || 
+       user.unlockedMaterialIds?.includes(m.id) || 
+       localPurchasedSet.has(m.id) || 
+       m.preuMerits === 0)
     ).length;
-  }, [studyMaterials, user.purchasedMaterialIds, user.unlockedMaterialIds, isDocentOrAdmin]);
+  }, [studyMaterials, user.purchasedMaterialIds, user.unlockedMaterialIds, localPurchasedSet, isDocentOrAdmin]);
 
   // Filtrar materials segons permís i pestanya
   const visibleMaterials = studyMaterials.filter(m => {
     if (!isDocentOrAdmin && m.estat === 'ocult') return false;
     if (materialFilter === 'tots') return true;
     if (materialFilter === 'proximament') return m.estat === 'proximament';
-    if (materialFilter === 'adquirit') return Boolean(user.purchasedMaterialIds?.includes(m.id) || user.unlockedMaterialIds?.includes(m.id) || m.preuMerits === 0);
+    if (materialFilter === 'adquirit') {
+      return Boolean(
+        user.purchasedMaterialIds?.includes(m.id) || 
+        user.unlockedMaterialIds?.includes(m.id) || 
+        localPurchasedSet.has(m.id) || 
+        m.preuMerits === 0
+      );
+    }
     return m.ambit === materialFilter;
   });
 
@@ -1148,6 +1219,7 @@ export const TiendaEscuts: React.FC<TiendaEscutsProps> = ({
               const isPurchased = Boolean(
                 user.purchasedMaterialIds?.includes(mat.id) || 
                 user.unlockedMaterialIds?.includes(mat.id) || 
+                localPurchasedSet.has(mat.id) || 
                 mat.preuMerits === 0
               );
               const isComingSoon = mat.estat === 'proximament';

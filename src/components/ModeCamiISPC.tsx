@@ -10,7 +10,8 @@ import {
 import { 
   QUESTIONS_BANK, 
   getQuestionsForTopicOrSubtopic, 
-  getQuestionCountForTopicOrSubtopic 
+  getQuestionCountForTopicOrSubtopic,
+  shuffleQuestionOptions
 } from '../data/questionsBank';
 import { AudioEngine } from '../utils/audio';
 import { TacticalChestModal, TacticalReward } from './TacticalChestModal';
@@ -29,7 +30,12 @@ import {
   Coins,
   Eye,
   EyeOff,
-  Check
+  Check,
+  Target,
+  Sparkles,
+  Filter,
+  Layers,
+  Flame
 } from 'lucide-react';
 
 interface ModeCamiISPCProps {
@@ -53,8 +59,10 @@ export const ModeCamiISPC: React.FC<ModeCamiISPCProps> = ({
   onOpenTacticalChest
 }) => {
   const [selectedAmbitFilter, setSelectedAmbitFilter] = useState<'all' | 'Àmbit A' | 'Àmbit B' | 'Àmbit C' | 'Àmbit D'>('all');
+  const [touchedFilter, setTouchedFilter] = useState<'all' | 'pending' | 'completed'>('all');
   const [activeMissionTopic, setActiveMissionTopic] = useState<CamiTopicInfo | null>(null);
   const [isDailyExpressActive, setIsDailyExpressActive] = useState<boolean>(false);
+  const [sessionAnsweredIds, setSessionAnsweredIds] = useState<Set<string>>(new Set());
 
   // Autorització d'administrador per visualitzar el recompte de preguntes
   const isAdmin = Boolean(
@@ -100,6 +108,86 @@ export const ModeCamiISPC: React.FC<ModeCamiISPCProps> = ({
 
   const topicMasteryMap = user.topicMastery || {};
 
+  // Conjunt reactiu de totes les preguntes tocades (usuari + sessió viva)
+  const answeredSet = useMemo(() => {
+    const set = new Set(user.answeredQuestionIds || []);
+    sessionAnsweredIds.forEach(id => set.add(id));
+    return set;
+  }, [user.answeredQuestionIds, sessionAnsweredIds]);
+
+  // Càlcul exhaustiu tema per tema de Preguntes Tocades vs Sense Tocar
+  const topicStatsMap = useMemo(() => {
+    const map: Record<string, {
+      total: number;
+      touched: number;
+      untouched: number;
+      touchedPct: number;
+      questions: Question[];
+    }> = {};
+
+    CAMI_TOPICS_LIST.forEach(topic => {
+      let questions = getQuestionsForTopicOrSubtopic(topic.id);
+      if (questions.length === 0) {
+        questions = QUESTIONS_BANK.filter(q => q.ambit === topic.ambit);
+      }
+      const total = questions.length;
+      const touched = questions.filter(q => answeredSet.has(q.id)).length;
+      const untouched = Math.max(0, total - touched);
+      const touchedPct = total > 0 ? Math.round((touched / total) * 100) : 0;
+
+      map[topic.id] = {
+        total,
+        touched,
+        untouched,
+        touchedPct,
+        questions
+      };
+    });
+
+    return map;
+  }, [answeredSet]);
+
+  // Càlcul Global de Preguntes Tocades a tot el Temari Oficial
+  const globalQuestionStats = useMemo(() => {
+    const allUnique = new Map<string, Question>();
+    CAMI_TOPICS_LIST.forEach(topic => {
+      const stat = topicStatsMap[topic.id];
+      if (stat) {
+        stat.questions.forEach(q => allUnique.set(q.id, q));
+      }
+    });
+
+    if (allUnique.size === 0) {
+      QUESTIONS_BANK.forEach(q => allUnique.set(q.id, q));
+    }
+
+    const allQuestions = Array.from(allUnique.values());
+    const total = allQuestions.length;
+    const touched = allQuestions.filter(q => answeredSet.has(q.id)).length;
+    const untouched = Math.max(0, total - touched);
+    const touchedPct = total > 0 ? Math.round((touched / total) * 100) : 0;
+
+    let pendingTopicsCount = 0;
+    let fullyTouchedTopicsCount = 0;
+
+    CAMI_TOPICS_LIST.forEach(t => {
+      const s = topicStatsMap[t.id];
+      if (s) {
+        if (s.untouched > 0) pendingTopicsCount++;
+        else if (s.total > 0 && s.untouched === 0) fullyTouchedTopicsCount++;
+      }
+    });
+
+    return {
+      total,
+      touched,
+      untouched,
+      touchedPct,
+      pendingTopicsCount,
+      fullyTouchedTopicsCount
+    };
+  }, [topicStatsMap, answeredSet]);
+
   // Càlcul de Cobertura Global i KPIs
   const { overallPercentage, ambitStats, totalGoldCount, totalAlertCount } = useMemo(() => {
     return calculateGlobalSyllabusCoverage(topicMasteryMap);
@@ -109,24 +197,27 @@ export const ModeCamiISPC: React.FC<ModeCamiISPCProps> = ({
   const todayStr = new Date().toISOString().split('T')[0];
   const isDailyMissionCompletedToday = user.lastDailyMissionDate === todayStr;
 
-  // Llista filtrada de temes per Àmbit oficial
+  // Llista filtrada de temes per Àmbit oficial i estat de preguntes tocades
   const filteredTopics = useMemo(() => {
-    if (selectedAmbitFilter === 'all') {
-      return CAMI_TOPICS_LIST;
+    let list = CAMI_TOPICS_LIST;
+    if (selectedAmbitFilter !== 'all') {
+      list = list.filter(t => t.ambit === selectedAmbitFilter);
     }
-    return CAMI_TOPICS_LIST.filter(t => t.ambit === selectedAmbitFilter);
-  }, [selectedAmbitFilter]);
+    if (touchedFilter === 'pending') {
+      list = list.filter(t => (topicStatsMap[t.id]?.untouched || 0) > 0);
+    } else if (touchedFilter === 'completed') {
+      list = list.filter(t => (topicStatsMap[t.id]?.untouched || 0) === 0 && (topicStatsMap[t.id]?.total || 0) > 0);
+    }
+    return list;
+  }, [selectedAmbitFilter, touchedFilter, topicStatsMap]);
 
-  // Iniciar Misió d'un Tema Oficial
+  // Iniciar Misió d'un Tema Oficial prioritzant preguntes SENSE TOCAR
   const handleStartTopicMission = (topic: CamiTopicInfo) => {
     AudioEngine.playClick();
     setActiveMissionTopic(topic);
     setIsDailyExpressActive(false);
 
-    // Consulta directa i estricta del banc oficial de preguntes (sense inventar res)
     let candidates = getQuestionsForTopicOrSubtopic(topic.id);
-
-    // Fallback de seguretat
     if (candidates.length === 0) {
       candidates = QUESTIONS_BANK.filter(q => q.ambit === topic.ambit);
     }
@@ -134,11 +225,34 @@ export const ModeCamiISPC: React.FC<ModeCamiISPCProps> = ({
       candidates = QUESTIONS_BANK;
     }
 
-    // Selecció de fins a 5 preguntes reals del tema
-    const count = Math.min(candidates.length, 5);
-    const shuffled = [...candidates].sort(() => 0.5 - Math.random()).slice(0, count);
+    // Separar estrictament preguntes pendents sense tocar de les ja practicades
+    const untouched = candidates.filter(q => !answeredSet.has(q.id));
+    const touched = candidates.filter(q => answeredSet.has(q.id));
 
-    setMissionQuestions(shuffled);
+    let selectedList: Question[] = [];
+    // Prioritzar PREGUNTES SENSE TOCAR perquè l'opositor sempre avanci el seu progrés
+    if (untouched.length > 0) {
+      const shuffledUntouched = [...untouched].sort(() => 0.5 - Math.random());
+      selectedList.push(...shuffledUntouched.slice(0, 5));
+    }
+
+    // Si queden places per completar el bloc de 5 preguntes, omplir amb preguntes ja tocades (repàs)
+    if (selectedList.length < 5 && touched.length > 0) {
+      const needed = 5 - selectedList.length;
+      const shuffledTouched = [...touched].sort(() => 0.5 - Math.random());
+      selectedList.push(...shuffledTouched.slice(0, needed));
+    }
+
+    if (selectedList.length === 0) {
+      selectedList = [...candidates].sort(() => 0.5 - Math.random()).slice(0, 5);
+    }
+
+    // Barrejador uniforme Fisher-Yates per a cada pregunta:
+    // Garanteix que la resposta correcta tingui un 25% exacte a cada lletra (A, B, C, D)
+    // eliminant qualsevol biaix posicional o visual de la lletra B
+    const randomizedTopicQuestions = selectedList.map(q => shuffleQuestionOptions(q));
+
+    setMissionQuestions(randomizedTopicQuestions);
     setCurrentQuestionIndex(0);
     setSelectedOption(null);
     setIsAnswerSubmitted(false);
@@ -152,14 +266,30 @@ export const ModeCamiISPC: React.FC<ModeCamiISPCProps> = ({
     setIsDailyExpressActive(true);
     setActiveMissionTopic(null);
 
-    // Filtrar estrictament d'Àmbit D (Tema Únic) de la base de dades
     let candidates = getQuestionsForTopicOrSubtopic('tema_d1');
     if (candidates.length === 0) {
       candidates = QUESTIONS_BANK.filter(q => q.ambit === 'Àmbit D' || q.ambit === 'Actualitat');
     }
 
-    const shuffled = [...candidates].sort(() => 0.5 - Math.random()).slice(0, 5);
-    setMissionQuestions(shuffled);
+    const untouched = candidates.filter(q => !answeredSet.has(q.id));
+    const touched = candidates.filter(q => answeredSet.has(q.id));
+
+    let selectedList: Question[] = [];
+    if (untouched.length > 0) {
+      selectedList.push(...[...untouched].sort(() => 0.5 - Math.random()).slice(0, 5));
+    }
+    if (selectedList.length < 5 && touched.length > 0) {
+      const needed = 5 - selectedList.length;
+      selectedList.push(...[...touched].sort(() => 0.5 - Math.random()).slice(0, needed));
+    }
+    if (selectedList.length === 0) {
+      selectedList = [...candidates].sort(() => 0.5 - Math.random()).slice(0, 5);
+    }
+
+    // Barrejador uniforme Fisher-Yates per a cada pregunta de la missió exprés
+    const randomizedExpressQuestions = selectedList.map(q => shuffleQuestionOptions(q));
+
+    setMissionQuestions(randomizedExpressQuestions);
     setCurrentQuestionIndex(0);
     setSelectedOption(null);
     setIsAnswerSubmitted(false);
@@ -175,6 +305,8 @@ export const ModeCamiISPC: React.FC<ModeCamiISPCProps> = ({
     const isCorrect = selectedOption === currentQ.resposta;
 
     setIsAnswerSubmitted(true);
+    // Registrar immediatament la pregunta com a tocada a la sessió viva
+    setSessionAnsweredIds(prev => new Set(prev).add(currentQ.id));
 
     if (isCorrect) {
       AudioEngine.playCorrect();
@@ -216,17 +348,29 @@ export const ModeCamiISPC: React.FC<ModeCamiISPCProps> = ({
       });
       onUpdateUserStats(100, 50);
       user.lastDailyMissionDate = todayStr;
-      onUpdateTopicMastery('tema_d1', scorePct, finalScore, totalQ);
+
+      const dStat = topicStatsMap['tema_d1'];
+      const coveragePct = dStat ? dStat.touchedPct : 50;
+      const combinedMastery = Math.min(100, Math.round((coveragePct * 0.4) + (scorePct * 0.6)));
+      const prevD = topicMasteryMap['tema_d1']?.mastery || 0;
+      const finalDMastery = Math.min(100, Math.max(prevD, combinedMastery, scorePct));
+
+      onUpdateTopicMastery('tema_d1', finalDMastery, finalScore, totalQ);
     } else if (activeMissionTopic) {
       const topic = activeMissionTopic;
       const topicId = topic.id;
       const prevRecord = topicMasteryMap[topicId];
       const prevMastery = prevRecord ? prevRecord.mastery : 0;
-      const newMastery = Math.min(100, Math.max(prevMastery, scorePct));
+
+      const tStat = topicStatsMap[topicId];
+      // Formula de mestratge que combina encerts i cobertura de preguntes tocades
+      const coveragePct = tStat ? tStat.touchedPct : 0;
+      const combinedMastery = Math.min(100, Math.round((coveragePct * 0.4) + (scorePct * 0.6)));
+      const newMastery = Math.min(100, Math.max(prevMastery, combinedMastery, scorePct));
 
       onUpdateTopicMastery(topicId, newMastery, finalScore, totalQ);
 
-      if (scorePct >= 80) {
+      if (scorePct >= 80 || newMastery >= 80) {
         AudioEngine.playGoldRank();
         confetti({ particleCount: 90, spread: 80, origin: { y: 0.6 } });
         if (newMastery >= 80 && prevMastery < 80) {
@@ -255,6 +399,8 @@ export const ModeCamiISPC: React.FC<ModeCamiISPCProps> = ({
   if (activeMissionTopic || isDailyExpressActive) {
     const currentQ = missionQuestions[currentQuestionIndex];
     const totalQ = missionQuestions.length;
+    const activeTopicStat = activeMissionTopic ? topicStatsMap[activeMissionTopic.id] : topicStatsMap['tema_d1'];
+    const isQuestionUntouched = Boolean(currentQ && !answeredSet.has(currentQ.id));
 
     return (
       <div className="max-w-4xl mx-auto px-3 sm:px-6 py-4 space-y-4">
@@ -272,12 +418,29 @@ export const ModeCamiISPC: React.FC<ModeCamiISPCProps> = ({
                 <span className="text-xs font-bold text-slate-400">
                   Pregunta {currentQuestionIndex + 1} de {totalQ}
                 </span>
+                {isQuestionUntouched ? (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1 shadow-sm">
+                    <Sparkles className="w-3 h-3 text-emerald-400" />
+                    <span>Nova · Sense tocar</span>
+                  </span>
+                ) : (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-slate-800 text-slate-400 border border-slate-700 flex items-center gap-1">
+                    <Clock className="w-3 h-3 text-slate-400" />
+                    <span>Ja tocada · Repàs</span>
+                  </span>
+                )}
               </div>
               <h2 className="text-base sm:text-lg font-black text-white leading-tight mt-1">
                 {isDailyExpressActive 
                   ? 'Àmbit D · Desafiament d’Actualitat & Cultura' 
                   : activeMissionTopic?.title}
               </h2>
+              {activeTopicStat && (
+                <div className="flex items-center gap-2 mt-1 text-xs text-slate-400">
+                  <Target className="w-3.5 h-3.5 text-sky-400" />
+                  <span>Progrés del tema: <strong className="text-sky-300">{activeTopicStat.touched} de {activeTopicStat.total} preguntes tocades</strong> ({activeTopicStat.touchedPct}%)</span>
+                </div>
+              )}
             </div>
           </div>
 
@@ -336,12 +499,12 @@ export const ModeCamiISPC: React.FC<ModeCamiISPCProps> = ({
                     type="button"
                     disabled={isAnswerSubmitted}
                     onClick={() => setSelectedOption(idx)}
-                    className={`w-full text-left p-3.5 sm:p-4 rounded-2xl border transition-all text-xs sm:text-sm flex items-start gap-3 cursor-pointer ${btnStyle}`}
+                    className={`w-full text-left p-3.5 sm:p-4 rounded-2xl border transition-all text-xs sm:text-sm flex items-center gap-3.5 cursor-pointer min-h-[56px] sm:min-h-[62px] active:scale-[0.99] ${btnStyle}`}
                   >
-                    <span className="w-6 h-6 rounded-lg bg-slate-800 text-slate-300 text-xs font-black flex items-center justify-center shrink-0">
+                    <span className="w-7 h-7 rounded-xl bg-slate-800 text-slate-300 text-xs font-black flex items-center justify-center shrink-0 border border-slate-700/80 shadow-inner">
                       {String.fromCharCode(65 + idx)}
                     </span>
-                    <span className="flex-1 leading-snug">{opt}</span>
+                    <span className="flex-1 leading-snug font-medium">{opt}</span>
                     {isAnswerSubmitted && isCorrect && (
                       <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
                     )}
@@ -376,6 +539,13 @@ export const ModeCamiISPC: React.FC<ModeCamiISPCProps> = ({
                   <div className="pt-1.5 border-t border-slate-800/80 text-[11px] text-emerald-300 flex items-center gap-1.5">
                     <span className="font-bold">🔑 Criteri Tribunal:</span>
                     <span>{currentQ.clauTribunal}</span>
+                  </div>
+                )}
+
+                {isQuestionUntouched && (
+                  <div className="text-[11px] text-emerald-300 font-semibold flex items-center gap-1.5 pt-1 border-t border-slate-800/80">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                    <span>🎯 +1 Pregunta registrada com a tocada! El teu progrés a Camí a l'ISPC ha avançat.</span>
                   </div>
                 )}
 
@@ -429,7 +599,7 @@ export const ModeCamiISPC: React.FC<ModeCamiISPCProps> = ({
               </p>
             </div>
 
-            <div className="grid grid-cols-3 gap-3 max-w-md mx-auto">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 max-w-xl mx-auto">
               <div className="p-3 bg-slate-950/70 border border-slate-800 rounded-2xl">
                 <div className="text-[10px] font-bold text-slate-400 uppercase">Encerts</div>
                 <div className="text-xl font-black text-emerald-400 mt-0.5">{missionCorrectCount}/{totalQ}</div>
@@ -441,16 +611,50 @@ export const ModeCamiISPC: React.FC<ModeCamiISPCProps> = ({
                 </div>
               </div>
               <div className="p-3 bg-slate-950/70 border border-slate-800 rounded-2xl">
-                <div className="text-[10px] font-bold text-slate-400 uppercase">Estat</div>
-                <div className="text-xs font-black text-amber-300 mt-1.5 uppercase">
-                  {missionCorrectCount >= 4 ? 'Or 🥇' : missionCorrectCount >= 3 ? 'Plata 🥈' : 'Bronze 🥉'}
+                <div className="text-[10px] font-bold text-sky-400 uppercase flex items-center gap-1 justify-center">
+                  <Target className="w-3 h-3" />
+                  <span>Tocades</span>
                 </div>
+                <div className="text-xl font-black text-sky-300 mt-0.5">
+                  {activeTopicStat?.touched || 0}/{activeTopicStat?.total || 0}
+                </div>
+                <div className="text-[10px] text-slate-400 font-medium">({activeTopicStat?.touchedPct || 0}%)</div>
+              </div>
+              <div className="p-3 bg-slate-950/70 border border-slate-800 rounded-2xl">
+                <div className="text-[10px] font-bold text-amber-400 uppercase flex items-center gap-1 justify-center">
+                  <Clock className="w-3 h-3" />
+                  <span>Sense tocar</span>
+                </div>
+                <div className="text-xl font-black text-amber-300 mt-0.5">
+                  {activeTopicStat?.untouched || 0}
+                </div>
+                <div className="text-[10px] text-slate-400 font-medium">pendents</div>
               </div>
             </div>
 
-            <div className="p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-2xl max-w-md mx-auto text-xs text-emerald-300 font-medium">
-              ✨ El nivell de domini i la corba d'oblit s'han actualitzat correctament per a aquest tema!
-            </div>
+            {/* Barra de progrés de preguntes tocades del tema */}
+            {activeTopicStat && (
+              <div className="max-w-xl mx-auto p-4 bg-slate-950/60 border border-slate-800 rounded-2xl space-y-2">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-bold text-slate-300 flex items-center gap-1.5">
+                    <Target className="w-3.5 h-3.5 text-sky-400" />
+                    <span>Progrés de preguntes tocades d'aquest tema:</span>
+                  </span>
+                  <span className="font-black text-sky-400">{activeTopicStat.touchedPct}%</span>
+                </div>
+                <div className="w-full h-2.5 bg-slate-800 rounded-full overflow-hidden">
+                  <div 
+                    className="h-full bg-gradient-to-r from-sky-500 via-indigo-500 to-emerald-400 rounded-full transition-all duration-700"
+                    style={{ width: `${activeTopicStat.touchedPct}%` }}
+                  />
+                </div>
+                <div className="text-left text-[11px] text-slate-400 pt-1">
+                  {activeTopicStat.untouched > 0 
+                    ? `Te'n queden ${activeTopicStat.untouched} sense tocar per completar el 100% del banc d'aquest tema.`
+                    : '🎉 Enhorabona! Has tocat totes les preguntes disponibles d\'aquest tema oficial.'}
+                </div>
+              </div>
+            )}
 
             <div className="pt-2 flex flex-col sm:flex-row gap-3 justify-center max-w-md mx-auto">
               <button
@@ -464,7 +668,7 @@ export const ModeCamiISPC: React.FC<ModeCamiISPCProps> = ({
                 }}
                 className="py-3 px-6 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs uppercase cursor-pointer transition-colors"
               >
-                Repetir Tema
+                Continuar Practicant
               </button>
               <button
                 type="button"
@@ -521,37 +725,69 @@ export const ModeCamiISPC: React.FC<ModeCamiISPCProps> = ({
               CAMÍ A L'ISPC · MAPA DE TEMARI OFICIAL
             </h1>
             <p className="text-xs sm:text-sm text-slate-400 leading-relaxed">
-              Tots els 21 temes oficials de la convocatòria connectats directament amb el teu banc de preguntes oficial. Entrena cada tema individualment, mantén el domini en <strong className="text-amber-400">Nivell Or</strong> i supera la corba d'oblit.
+              Tots els 21 temes oficials de la convocatòria connectats directament amb el teu banc de preguntes oficial. Consulta les <strong className="text-sky-400">preguntes tocades vs sense tocar</strong>, mantén el teu domini en <strong className="text-amber-400">Nivell Or</strong> i supera la corba d'oblit.
             </p>
           </div>
 
-          {/* KPI Widget: Progrés Global de Cobertura */}
-          <div className="w-full lg:w-80 bg-slate-950/80 border border-slate-800/90 rounded-2xl p-4 space-y-3 shrink-0">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-                <Award className="w-4 h-4 text-amber-400" />
-                <span>Cobertura Temari</span>
-              </span>
-              <span className="text-lg font-black text-amber-400">{overallPercentage}%</span>
-            </div>
-
-            {/* Barra de progrés */}
-            <div className="w-full h-2.5 bg-slate-800 rounded-full overflow-hidden">
-              <div 
-                className="h-full bg-gradient-to-r from-amber-500 via-sky-500 to-emerald-400 rounded-full transition-all duration-700"
-                style={{ width: `${overallPercentage}%` }}
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-2 text-center pt-1 border-t border-slate-800/80">
-              <div className="p-1.5 bg-slate-900/60 rounded-xl">
-                <div className="text-[10px] text-slate-400 font-semibold uppercase">Temes en Or</div>
-                <div className="text-sm font-black text-amber-400 mt-0.5">{totalGoldCount} / {CAMI_TOPICS_LIST.length}</div>
+          {/* KPI DASHBOARD: PREGUNTES TOCADES & MESTRATGE */}
+          <div className="w-full lg:w-96 bg-slate-950/90 border border-slate-800 rounded-2xl p-4 space-y-3.5 shrink-0 shadow-xl">
+            {/* 1. Progrés Principal: Preguntes Tocades vs Sense Tocar */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
+                  <Target className="w-4 h-4 text-sky-400" />
+                  <span>Preguntes Tocades</span>
+                </span>
+                <span className="text-base font-black text-sky-400">
+                  {globalQuestionStats.touched} / {globalQuestionStats.total} <span className="text-xs text-slate-400 font-bold">({globalQuestionStats.touchedPct}%)</span>
+                </span>
               </div>
-              <div className="p-1.5 bg-slate-900/60 rounded-xl">
-                <div className="text-[10px] text-slate-400 font-semibold uppercase">Alertes Degradació</div>
-                <div className={`text-sm font-black mt-0.5 ${totalAlertCount > 0 ? 'text-red-400 animate-pulse' : 'text-slate-400'}`}>
-                  {totalAlertCount} en risc
+
+              {/* Barra de progrés de preguntes tocades */}
+              <div className="w-full h-2.5 bg-slate-800 rounded-full overflow-hidden">
+                <div 
+                  className="h-full bg-gradient-to-r from-sky-500 via-indigo-500 to-emerald-400 rounded-full transition-all duration-700"
+                  style={{ width: `${globalQuestionStats.touchedPct}%` }}
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 text-center pt-1">
+                <div className="p-1.5 bg-slate-900/80 border border-slate-800/60 rounded-xl">
+                  <div className="text-[10px] text-sky-400 font-bold uppercase flex items-center gap-1 justify-center">
+                    <CheckCircle2 className="w-3 h-3" />
+                    <span>Tocades</span>
+                  </div>
+                  <div className="text-sm font-black text-sky-300 mt-0.5">{globalQuestionStats.touched}</div>
+                </div>
+                <div className="p-1.5 bg-slate-900/80 border border-slate-800/60 rounded-xl">
+                  <div className="text-[10px] text-amber-400 font-bold uppercase flex items-center gap-1 justify-center">
+                    <Clock className="w-3 h-3" />
+                    <span>Sense tocar</span>
+                  </div>
+                  <div className="text-sm font-black text-amber-300 mt-0.5">{globalQuestionStats.untouched}</div>
+                </div>
+              </div>
+            </div>
+
+            {/* 2. Cobertura de Mestratge Oficial & Alertes */}
+            <div className="pt-2 border-t border-slate-800/80 space-y-1.5">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-slate-300 font-bold flex items-center gap-1.5 uppercase">
+                  <Award className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Mestratge Oficial:</span>
+                </span>
+                <span className="text-xs font-black text-amber-400">{overallPercentage}%</span>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-center">
+                <div className="p-1 bg-slate-900/60 rounded-lg">
+                  <span className="text-[10px] text-slate-400">Temes en Or: </span>
+                  <span className="text-xs font-black text-amber-400">{totalGoldCount}/21</span>
+                </div>
+                <div className="p-1 bg-slate-900/60 rounded-lg">
+                  <span className="text-[10px] text-slate-400">En Risc: </span>
+                  <span className={`text-xs font-black ${totalAlertCount > 0 ? 'text-red-400 animate-pulse' : 'text-slate-400'}`}>
+                    {totalAlertCount}
+                  </span>
                 </div>
               </div>
             </div>
@@ -610,44 +846,51 @@ export const ModeCamiISPC: React.FC<ModeCamiISPCProps> = ({
         </button>
       </div>
 
-      {/* FILTRES PER ÀMBITS OFICIALS (Tots els temes, o estrictament Àmbit A, B, C, D) */}
-      <div className="flex items-center gap-2 overflow-x-auto pretty-scrollbar pb-1">
-        <button
-          type="button"
-          onClick={() => setSelectedAmbitFilter('all')}
-          className={`px-4 py-2 rounded-xl text-xs font-bold shrink-0 transition-all cursor-pointer ${
-            selectedAmbitFilter === 'all'
-              ? 'bg-amber-500 text-slate-950 font-black shadow-md shadow-amber-500/20'
-              : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
-          }`}
-        >
-          Tots els Temes ({CAMI_TOPICS_LIST.length})
-        </button>
-
-        {CAMI_AMBITS.map(amb => {
-          const isSelected = selectedAmbitFilter === amb.id;
-          const stat = ambitStats[amb.id];
-          const topicsCount = CAMI_TOPICS_LIST.filter(t => t.ambit === amb.id).length;
-
-          return (
+      {/* BARRA DE FILTRES I ESTAT DE PREGUNTES TOCADES */}
+      <div className="space-y-2.5">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          {/* Filtres per Àmbits Oficials */}
+          <div className="flex items-center gap-2 overflow-x-auto pretty-scrollbar pb-1 flex-1">
             <button
-              key={amb.id}
               type="button"
-              onClick={() => setSelectedAmbitFilter(amb.id)}
-              className={`px-4 py-2 rounded-xl text-xs font-bold shrink-0 transition-all flex items-center gap-2 cursor-pointer ${
-                isSelected
-                  ? 'bg-slate-800 text-white border-2 border-amber-500 shadow-md'
+              onClick={() => setSelectedAmbitFilter('all')}
+              className={`px-4 py-2 rounded-xl text-xs font-bold shrink-0 transition-all cursor-pointer ${
+                selectedAmbitFilter === 'all'
+                  ? 'bg-amber-500 text-slate-950 font-black shadow-md shadow-amber-500/20'
                   : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
               }`}
             >
-              <span>{amb.icon}</span>
-              <span>{amb.id} ({topicsCount})</span>
-              <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-slate-950 text-amber-400 font-black">
-                {stat.averageMastery}%
-              </span>
+              Tots els Àmbits ({CAMI_TOPICS_LIST.length})
             </button>
-          );
-        })}
+
+            {CAMI_AMBITS.map(amb => {
+              const isSelected = selectedAmbitFilter === amb.id;
+              const topicsInAmbit = CAMI_TOPICS_LIST.filter(t => t.ambit === amb.id);
+              const touchedInAmbit = topicsInAmbit.reduce((acc, t) => acc + (topicStatsMap[t.id]?.touched || 0), 0);
+              const totalInAmbit = topicsInAmbit.reduce((acc, t) => acc + (topicStatsMap[t.id]?.total || 0), 0);
+
+              return (
+                <button
+                  key={amb.id}
+                  type="button"
+                  onClick={() => setSelectedAmbitFilter(amb.id)}
+                  className={`px-4 py-2 rounded-xl text-xs font-bold shrink-0 transition-all flex items-center gap-2 cursor-pointer ${
+                    isSelected
+                      ? 'bg-slate-800 text-white border-2 border-amber-500 shadow-md'
+                      : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
+                  }`}
+                >
+                  <span>{amb.icon}</span>
+                  <span>{amb.id}</span>
+                  <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-slate-950 text-sky-400 font-bold border border-slate-800">
+                    {touchedInAmbit}/{totalInAmbit}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+        </div>
       </div>
 
       {/* TARGETES NETES I DIRECTES DELS 21 TEMES OFICIALS */}
@@ -665,7 +908,7 @@ export const ModeCamiISPC: React.FC<ModeCamiISPCProps> = ({
             daysInactive 
           } = calculateTopicMasteryWithDecay(topicRecord);
 
-          const totalQuestionsInTopic = canShowQuestionCounts ? getQuestionCountForTopicOrSubtopic(topic.id) : 0;
+          const stat = topicStatsMap[topic.id] || { total: 0, touched: 0, untouched: 0, touchedPct: 0 };
 
           // Estils de card segons el rang
           let cardBorder = "border-slate-800/80 hover:border-slate-700";
@@ -721,16 +964,50 @@ export const ModeCamiISPC: React.FC<ModeCamiISPCProps> = ({
                   </p>
                 </div>
 
-                {/* BARRA DE DOMINI DEL TEMA */}
+                {/* BLOC PRINCIPAL: PREGUNTES TOCADES VS SENSE TOCAR */}
+                <div className="p-3 bg-slate-950/80 border border-slate-800/90 rounded-2xl space-y-1.5">
+                  <div className="flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-1.5 font-bold text-slate-200">
+                      <Target className="w-3.5 h-3.5 text-sky-400" />
+                      <span>Preguntes Tocades:</span>
+                    </div>
+                    <div className="flex items-center gap-1 font-black text-sky-400">
+                      <span>{stat.touched} / {stat.total}</span>
+                      <span className="text-[11px] text-slate-400">({stat.touchedPct}%)</span>
+                    </div>
+                  </div>
+
+                  {/* Barra de progrés de preguntes tocades */}
+                  <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
+                    <div 
+                      className="h-full bg-gradient-to-r from-sky-500 to-emerald-400 rounded-full transition-all duration-500"
+                      style={{ width: `${stat.touchedPct}%` }}
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between text-[11px] pt-0.5">
+                    {stat.untouched === 0 ? (
+                      <span className="text-emerald-400 font-bold flex items-center gap-1">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>100% Tocades</span>
+                      </span>
+                    ) : (
+                      <span className="text-amber-400 font-semibold flex items-center gap-1">
+                        <Clock className="w-3 h-3 text-amber-400" />
+                        <span>{stat.untouched} sense tocar</span>
+                      </span>
+                    )}
+                    <span className="text-[10px] text-slate-400 font-medium">
+                      {stat.touched} practicades
+                    </span>
+                  </div>
+                </div>
+
+                {/* BARRA DE DOMINI I REFORÇ DEL TEMA */}
                 <div className="space-y-1.5 pt-1">
                   <div className="flex items-center justify-between text-xs">
                     <div className="flex items-center gap-1.5 font-bold text-slate-300">
-                      <span>Domini del Tema:</span>
-                      {canShowQuestionCounts && totalQuestionsInTopic > 0 && (
-                        <span className="text-[11px] font-bold text-sky-400 bg-sky-950/60 px-1.5 py-0.2 rounded border border-sky-800/60">
-                          📚 {totalQuestionsInTopic} preguntes
-                        </span>
-                      )}
+                      <span>Domini Oficial:</span>
                     </div>
 
                     <div className="flex items-center gap-1 font-black">
@@ -745,7 +1022,7 @@ export const ModeCamiISPC: React.FC<ModeCamiISPCProps> = ({
                     </div>
                   </div>
 
-                  <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
+                  <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
                     <div
                       className={`h-full rounded-full transition-all duration-500 ${
                         isCriticalAlert
@@ -771,7 +1048,7 @@ export const ModeCamiISPC: React.FC<ModeCamiISPCProps> = ({
                 </div>
               </div>
 
-              {/* Botó per entrenar el tema oficial complet */}
+              {/* Botó per entrenar el tema oficial prioritzant preguntes sense tocar */}
               <div className="pt-4 mt-3 border-t border-slate-800/80">
                 <button
                   type="button"
@@ -779,14 +1056,20 @@ export const ModeCamiISPC: React.FC<ModeCamiISPCProps> = ({
                   className={`w-full py-2.5 px-4 rounded-xl font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all cursor-pointer active:scale-95 ${
                     isCriticalAlert
                       ? 'bg-red-500 hover:bg-red-600 text-white shadow-lg shadow-red-500/20'
-                      : tier === 'gold'
-                        ? 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40'
-                        : 'bg-slate-800 hover:bg-slate-700 text-white'
+                      : stat.untouched > 0
+                        ? 'bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-white shadow-md shadow-sky-500/20'
+                        : tier === 'gold'
+                          ? 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40'
+                          : 'bg-slate-800 hover:bg-slate-700 text-white'
                   }`}
                 >
                   <Play className="w-3.5 h-3.5 fill-current" />
                   <span>
-                    {currentMastery === 0 ? 'Iniciar Tema' : isCriticalAlert ? 'Recuperar Domini Urgent' : 'Repassar Tema'}
+                    {stat.untouched > 0
+                      ? `Practicar Sense Tocar (${stat.untouched} pendents)`
+                      : isCriticalAlert
+                        ? 'Recuperar Domini Urgent'
+                        : 'Repassar Tema'}
                   </span>
                 </button>
               </div>

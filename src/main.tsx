@@ -3,6 +3,7 @@ import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
 import './index.css';
 import { registerPushServiceWorker } from './utils/pushNotifications';
+import { ErrorBoundary } from './components/ErrorBoundary';
 
 // Registre immediat del Service Worker per al suport de notificacions natives a la barra d'Android
 if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
@@ -11,6 +12,8 @@ if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>
   </StrictMode>,
 );

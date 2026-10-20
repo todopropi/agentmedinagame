@@ -1,24 +1,48 @@
 import React from 'react';
 
 interface OfficialEmblemProps {
-  size?: number;
+  size?: number | 'xs' | 'sm' | 'md' | 'lg' | 'xl';
   className?: string;
   glow?: boolean;
 }
 
 export const OfficialEmblem: React.FC<OfficialEmblemProps> = ({ 
-  size = 140, 
+  size = 40, 
   className = '',
-  glow = true 
+  glow = false 
 }) => {
   const [imgError, setImgError] = React.useState(false);
 
+  // Convert size to numeric pixels
+  const numericSize = React.useMemo(() => {
+    if (typeof size === 'string') {
+      switch (size) {
+        case 'xs': return 26;
+        case 'sm': return 36;
+        case 'md': return 48;
+        case 'lg': return 64;
+        case 'xl': return 88;
+        default: return 40;
+      }
+    }
+    if (typeof size === 'number' && !isNaN(size)) {
+      return Math.max(20, Math.min(size, 200));
+    }
+    return 40;
+  }, [size]);
+
+  const calculatedWidth = Math.round(numericSize * (756 / 958));
+
   if (!imgError) {
-    const calculatedWidth = Math.round(size * (756 / 958));
     return (
       <div 
-        className={`inline-flex items-center justify-center relative select-none shrink-0 ${className}`}
-        style={{ height: size, width: calculatedWidth }}
+        className={`inline-flex items-center justify-center relative select-none shrink-0 overflow-hidden ${className}`}
+        style={{ 
+          height: `${numericSize}px`, 
+          width: `${calculatedWidth}px`,
+          maxHeight: `${numericSize}px`,
+          maxWidth: `${calculatedWidth}px`
+        }}
       >
         <img 
           src="/meed-logo.png" 
@@ -27,8 +51,10 @@ export const OfficialEmblem: React.FC<OfficialEmblemProps> = ({
           className="w-full h-full object-contain filter transition-transform group-hover:scale-105"
           style={{
             filter: glow 
-              ? 'drop-shadow(0 0 12px rgba(245, 158, 11, 0.5)) drop-shadow(0 4px 8px rgba(0,0,0,0.8))' 
-              : 'drop-shadow(0 2px 5px rgba(0,0,0,0.65))'
+              ? 'drop-shadow(0 0 8px rgba(245, 158, 11, 0.45)) drop-shadow(0 2px 4px rgba(0,0,0,0.8))' 
+              : 'drop-shadow(0 2px 4px rgba(0,0,0,0.5))',
+            maxHeight: '100%',
+            maxWidth: '100%'
           }}
           referrerPolicy="no-referrer"
         />
@@ -39,7 +65,7 @@ export const OfficialEmblem: React.FC<OfficialEmblemProps> = ({
   return (
     <div 
       className={`inline-block relative select-none ${className}`}
-      style={{ width: size, height: size }}
+      style={{ width: `${numericSize}px`, height: `${numericSize}px` }}
     >
       <svg 
         viewBox="0 0 400 400" 

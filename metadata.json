@@ -1,6 +1,6 @@
 {
-  "name": "v camí l\u0027ISPC agentmedinagame",
-  "description": "AgentMedina-Game",
+  "name": "+ fisicas agentmedinagame",
+  "description": "Aplicació de joc interactiu per al teu futur.",
   "requestFramePermissions": [],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"

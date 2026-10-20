@@ -26,7 +26,9 @@ import {
   syncSupabaseUserProgression,
   fetchSupabaseUserProgression,
   fetchActiveBroadcastMessage,
-  AdminBroadcastMessage
+  AdminBroadcastMessage,
+  syncUserStudyMaterialPurchase,
+  fetchUserPurchasedMaterials
 } from '../supabase';
 import { AuthModal } from './components/AuthModal';
 import { Navbar, ActiveTab } from './components/Navbar';
@@ -49,12 +51,87 @@ import { InAppNotification, NotificationPreferences } from './types';
 import { requestPushPermissionAndToken, subscribeToUserNotifications, showNativePushAlert, fetchUserNotificationsList } from './utils/pushNotifications';
 import { AudioEngine } from './utils/audio';
 import confetti from 'canvas-confetti';
-import { Upload, Sparkles, AlertCircle, Copy, Check, X, ShieldAlert, Megaphone, Flame, CheckCircle2, TrendingUp } from 'lucide-react';
+import { Upload, Sparkles, AlertCircle, Copy, Check, X, ShieldAlert, Megaphone, Flame, CheckCircle2, TrendingUp, BookOpen, Dumbbell, Layers, LogOut } from 'lucide-react';
+import { ModeFisiques } from './components/ModeFisiques';
+import { ModeSelectorHub } from './components/ModeSelectorHub';
+import { OfficialEmblem } from './components/OfficialEmblem';
 
 export default function App() {
-  const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
-  const [authChecked, setAuthChecked] = useState(false);
-  const [activeTab, setActiveTab] = useState<ActiveTab>('campanya');
+  const [currentUser, setCurrentUser] = useState<UserProfile | null>(() => {
+    try {
+      const stored = getStoredLocalUser();
+      if (stored) {
+        stored.rank = calculateRank(stored.xp);
+        return stored;
+      }
+    } catch (e) {}
+    return null;
+  });
+  const [authChecked, setAuthChecked] = useState<boolean>(() => {
+    try {
+      return Boolean(getStoredLocalUser());
+    } catch {
+      return false;
+    }
+  });
+  const [mainMode, setMainMode] = useState<'hub' | 'estudi' | 'fisiques'>(() => {
+    try {
+      // 1. Si hi ha un entrenament actiu en curs a físiques, restaurar directament
+      const activeWorkout = localStorage.getItem('agent_medina_active_pb_workout');
+      if (activeWorkout) {
+        const parsed = JSON.parse(activeWorkout);
+        if (parsed?.isWorkoutActive && Date.now() - (parsed.lastUpdated || 0) < 24 * 3600 * 1000) {
+          return 'fisiques';
+        }
+      }
+      // 2. Si no, restaurar l'últim mode que l'usuari tenia obert
+      const saved = localStorage.getItem('agent_medina_main_mode');
+      if (saved === 'estudi' || saved === 'fisiques') return saved;
+      if (saved === 'hub') return 'hub';
+    } catch (e) {}
+    return 'hub';
+  });
+  const [activeTab, setActiveTab] = useState<ActiveTab>(() => {
+    try {
+      const saved = localStorage.getItem('agent_medina_active_tab') as ActiveTab;
+      if (saved && ['campanya', 'cami_ispc', 'duels', 'escuts', 'repas', 'ranking'].includes(saved)) {
+        return saved;
+      }
+    } catch (e) {}
+    return 'campanya';
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('agent_medina_main_mode', mainMode);
+    } catch (e) {}
+  }, [mainMode]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('agent_medina_active_tab', activeTab);
+    } catch (e) {}
+  }, [activeTab]);
+
+  // Guardat immediat en anar a WhatsApp, canviar de finestra o bloquejar pantalla
+  useEffect(() => {
+    const handleSaveAppState = () => {
+      try {
+        localStorage.setItem('agent_medina_main_mode', mainMode);
+        localStorage.setItem('agent_medina_active_tab', activeTab);
+      } catch (e) {}
+    };
+
+    window.addEventListener('pagehide', handleSaveAppState);
+    window.addEventListener('beforeunload', handleSaveAppState);
+    document.addEventListener('visibilitychange', handleSaveAppState);
+
+    return () => {
+      window.removeEventListener('pagehide', handleSaveAppState);
+      window.removeEventListener('beforeunload', handleSaveAppState);
+      document.removeEventListener('visibilitychange', handleSaveAppState);
+    };
+  }, [mainMode, activeTab]);
   const [showImportModal, setShowImportModal] = useState(false);
   const [showAdminModal, setShowAdminModal] = useState(false);
   const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
@@ -443,10 +520,7 @@ export default function App() {
           enriched.equippedShieldId = cloudGameData.equippedShieldId;
         }
         if (Array.isArray(cloudGameData.failedQuestionIds)) {
-          enriched.failedQuestionIds = Array.from(new Set([
-            ...(enriched.failedQuestionIds || []),
-            ...cloudGameData.failedQuestionIds
-          ]));
+          enriched.failedQuestionIds = cloudGameData.failedQuestionIds;
         }
         if (Array.isArray(cloudGameData.savedQuestionIds)) {
           enriched.savedQuestionIds = Array.from(new Set([
@@ -533,9 +607,27 @@ export default function App() {
         if (typeof cloudGameData.activeTimeSeconds === 'number') {
           enriched.activeTimeSeconds = cloudGameData.activeTimeSeconds;
         }
-        if (Array.isArray(cloudGameData.unlockedMaterialIds)) {
-          enriched.unlockedMaterialIds = cloudGameData.unlockedMaterialIds;
-        }
+
+        // Recuperar materials comprats de totes les fonts (local, núvol i backup)
+        const localBackupMats: string[] = [];
+        try {
+          const raw = localStorage.getItem(`agent_medina_purchased_materials_${uid}`);
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed)) localBackupMats.push(...parsed);
+          }
+        } catch {}
+
+        const allUnlockedMats = Array.from(new Set([
+          ...(enriched.unlockedMaterialIds || []),
+          ...(enriched.purchasedMaterialIds || []),
+          ...(Array.isArray(cloudGameData?.unlockedMaterialIds) ? cloudGameData.unlockedMaterialIds : []),
+          ...(Array.isArray(cloudGameData?.purchasedMaterialIds) ? cloudGameData.purchasedMaterialIds : []),
+          ...localBackupMats
+        ]));
+
+        enriched.unlockedMaterialIds = allUnlockedMats;
+        enriched.purchasedMaterialIds = allUnlockedMats;
       }
 
       enriched.rank = calculateRank(enriched.xp);
@@ -582,7 +674,9 @@ export default function App() {
             failedQuestionIds: enriched.failedQuestionIds || [],
             savedQuestionIds: enriched.savedQuestionIds || [],
             savedMnemonicIds: enriched.savedMnemonicIds || [],
-            readBroadcastIds: enriched.readBroadcastIds || []
+            readBroadcastIds: enriched.readBroadcastIds || [],
+            unlockedMaterialIds: enriched.unlockedMaterialIds || [],
+            purchasedMaterialIds: enriched.purchasedMaterialIds || []
           });
         }
       });
@@ -621,7 +715,9 @@ export default function App() {
             failedQuestionIds: enriched.failedQuestionIds || [],
             savedQuestionIds: enriched.savedQuestionIds || [],
             savedMnemonicIds: enriched.savedMnemonicIds || [],
-            readBroadcastIds: enriched.readBroadcastIds || []
+            readBroadcastIds: enriched.readBroadcastIds || [],
+            unlockedMaterialIds: enriched.unlockedMaterialIds || [],
+            purchasedMaterialIds: enriched.purchasedMaterialIds || []
           });
         }
       } else {
@@ -659,7 +755,8 @@ export default function App() {
     failedId?: string, 
     savedId?: string,
     answeredId?: string,
-    isCorrect?: boolean
+    isCorrect?: boolean,
+    removeFailedId?: string
   ) => {
     if (!currentUser) return;
 
@@ -676,6 +773,10 @@ export default function App() {
         updatedFailed.push(failedId);
       }
       currentMistakes[failedId] = (currentMistakes[failedId] || 0) + 1;
+    }
+
+    if (removeFailedId) {
+      updatedFailed = updatedFailed.filter(id => id !== removeFailedId);
     }
 
     let updatedSaved = [...(currentUser.savedQuestionIds || [])];
@@ -1057,7 +1158,11 @@ export default function App() {
     }
     AudioEngine.playCorrect();
     const updatedMerits = currentUser.merits - material.preuMerits;
-    const unlocked = Array.from(new Set([...(currentUser.unlockedMaterialIds || []), ...(currentUser.purchasedMaterialIds || []), material.id]));
+    const unlocked = Array.from(new Set([
+      ...(currentUser.unlockedMaterialIds || []), 
+      ...(currentUser.purchasedMaterialIds || []), 
+      material.id
+    ]));
     const updatedUser: UserProfile = {
       ...currentUser,
       merits: updatedMerits,
@@ -1066,12 +1171,42 @@ export default function App() {
     };
     setCurrentUser(updatedUser);
     saveStoredLocalUser(updatedUser);
-    await syncUserProfileUpdate(updatedUser);
-    await syncSupabaseUserProgression(currentUser.uid, {
-      merits: updatedMerits,
-      unlockedMaterialIds: unlocked,
-      purchasedMaterialIds: unlocked
-    });
+
+    // 1. Guardar a la clau local backup persistent
+    try {
+      const backupKey = `agent_medina_purchased_materials_${currentUser.uid}`;
+      const existingRaw = localStorage.getItem(backupKey);
+      const existing = existingRaw ? JSON.parse(existingRaw) : [];
+      localStorage.setItem(backupKey, JSON.stringify(Array.from(new Set([...existing, ...unlocked]))));
+    } catch (e) {
+      console.warn('Error saving local backup of purchased material:', e);
+    }
+
+    // 2. Guardar a perfil Firebase / local
+    try {
+      await syncUserProfileUpdate(updatedUser);
+    } catch (e) {
+      console.warn('syncUserProfileUpdate error in handleBuyStudyMaterial:', e);
+    }
+
+    // 3. Sincronitzar progressió a Supabase
+    try {
+      await syncSupabaseUserProgression(currentUser.uid, {
+        merits: updatedMerits,
+        unlockedMaterialIds: unlocked,
+        purchasedMaterialIds: unlocked
+      });
+    } catch (e) {
+      console.warn('syncSupabaseUserProgression error in handleBuyStudyMaterial:', e);
+    }
+
+    // 4. Guardar registre dedicat de compra a Supabase (taula matches -> user_materials_${uid})
+    try {
+      await syncUserStudyMaterialPurchase(currentUser.uid, material.id);
+    } catch (e) {
+      console.warn('syncUserStudyMaterialPurchase error:', e);
+    }
+
     confetti({ particleCount: 60, spread: 70 });
   };
 
@@ -1201,6 +1336,98 @@ export default function App() {
     setShowSubscriptionModal(false);
   };
 
+  if (mainMode === 'hub') {
+    return (
+      <ModeSelectorHub
+        user={currentUser}
+        onSelectMode={(mode) => {
+          AudioEngine.playClick();
+          setMainMode(mode);
+        }}
+        onLogout={handleLogout}
+      />
+    );
+  }
+
+  if (mainMode === 'fisiques') {
+    return (
+      <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col selection:bg-amber-500 selection:text-slate-950">
+        {/* Header Superior per a Físiques */}
+        <header className="sticky top-0 z-50 bg-slate-950/95 backdrop-blur-md border-b border-slate-800/90 shadow-xl ios-safe-top">
+          <div className="max-w-7xl mx-auto px-4 py-2.5 flex items-center justify-between">
+            <div 
+              onClick={() => setMainMode('hub')}
+              className="flex items-center gap-2.5 cursor-pointer group select-none"
+            >
+              <OfficialEmblem size={38} glow={false} />
+              <div>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-sm sm:text-base font-black text-white group-hover:text-amber-400 transition-colors">
+                    AGENT MEDINA
+                  </span>
+                  <span className="text-[9px] font-extrabold px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30 uppercase">
+                    FÍSIQUES
+                  </span>
+                </div>
+                <span className="text-[10px] text-slate-400 block font-medium">
+                  Convocatòria Oficial Cos de Mossos d'Esquadra
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setMainMode('estudi')}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-sky-500/10 hover:bg-sky-500/20 text-sky-400 border border-sky-500/30 rounded-xl text-xs font-bold transition-all cursor-pointer"
+              >
+                <BookOpen className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Mode Estudi</span>
+                <span className="sm:hidden">Estudi</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setMainMode('hub')}
+                title="Canviar de mode (Tots els modes)"
+                className="p-2 bg-slate-900 hover:bg-slate-800 text-slate-300 rounded-xl border border-slate-800 transition-colors cursor-pointer"
+              >
+                <Layers className="w-4 h-4 text-amber-400" />
+              </button>
+
+              <button
+                type="button"
+                onClick={handleLogout}
+                title="Tancar sessió"
+                className="p-2 text-slate-400 hover:text-white hover:bg-slate-900 rounded-xl transition-colors cursor-pointer"
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        </header>
+
+        <main className="flex-1 pb-12">
+          <ModeFisiques 
+            user={currentUser} 
+            onSwitchToEstudi={() => setMainMode('estudi')} 
+          />
+        </main>
+
+        <footer className="w-full py-6 px-4 border-t border-slate-900 bg-slate-950/80 text-center text-[11px] text-slate-400 mt-auto">
+          <div className="max-w-4xl mx-auto space-y-1">
+            <p className="font-semibold text-slate-300">
+              Agent Medina • Preparació Oficial de Proves Físiques CME 2026
+            </p>
+            <p className="text-slate-500">
+              Press de Banca (45s amb cadència de 1,02s) • Circuït d'Agilitat • Cursa Llançadora (Course Navette)
+            </p>
+          </div>
+        </footer>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col selection:bg-amber-500 selection:text-slate-950">
       {domainAlert && (
@@ -1256,6 +1483,8 @@ export default function App() {
         onOpenNotificationsModal={() => setShowNotificationsModal(true)}
         onOpenLegalModal={() => setShowLegalModal(true)}
         sectionLabels={sectionConfig as any}
+        onSwitchToFisiques={() => setMainMode('fisiques')}
+        onOpenHub={() => setMainMode('hub')}
       />
 
       {/* Modal Gran al Mig de la Pantalla per a Torns de Duel Pendents */}
@@ -1354,8 +1583,8 @@ export default function App() {
             onRemoveFailedQuestion={handleRemoveFailedQuestion}
             onToggleSaveQuestion={handleToggleSaveQuestion}
             onToggleSaveMnemonic={handleToggleSaveMnemonic}
-            onUpdateStats={(xp, merits, failedId, savedId, answeredId, isCorrect) => 
-              handleUpdateStats(xp, merits, failedId, savedId, answeredId, isCorrect)
+            onUpdateStats={(xp, merits, failedId, savedId, answeredId, isCorrect, removeFailedId) => 
+              handleUpdateStats(xp, merits, failedId, savedId, answeredId, isCorrect, removeFailedId)
             }
           />
         )}
