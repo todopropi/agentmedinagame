@@ -158,7 +158,28 @@ export const ModeCampanya: React.FC<ModeCampanyaProps> = ({
     }
   });
 
-  const [activeSession, setActiveSession] = useState<ActiveQuestionSession | null>(null);
+  const [activeSession, setActiveSession] = useState<ActiveQuestionSession | null>(() => {
+    try {
+      const raw = localStorage.getItem(`agent_medina_campanya_active_session_${user.uid}`);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed?.question && Date.now() - (parsed.timestamp || 0) < 12 * 3600 * 1000) {
+          return parsed;
+        }
+      }
+    } catch {}
+    return null;
+  });
+
+  useEffect(() => {
+    try {
+      if (activeSession) {
+        localStorage.setItem(`agent_medina_campanya_active_session_${user.uid}`, JSON.stringify(activeSession));
+      } else {
+        localStorage.removeItem(`agent_medina_campanya_active_session_${user.uid}`);
+      }
+    } catch {}
+  }, [activeSession, user.uid]);
   const [lastEventMsg, setLastEventMsg] = useState<string | null>(null);
   const [isCompleted, setIsCompleted] = useState(false);
   const [earnedAmbitShield, setEarnedAmbitShield] = useState<{ id: string; name: string; unit: string } | null>(null);

@@ -41,10 +41,62 @@ export interface PracticeSessionRecord {
 
 const STORAGE_PREFIX = 'agent_medina_physical_records_';
 const PRACTICE_STORAGE_PREFIX = 'agent_medina_practice_records_';
+const DELETED_IDS_STORAGE_PREFIX = 'agent_medina_deleted_physical_ids_';
+
+/**
+ * Recupera tots els IDs eliminats de l'usuari (tombstones) per evitar que reapareguin
+ */
+export function getDeletedPhysicalIds(userIdOrEmail?: string, userEmail?: string): string[] {
+  const keys = getUserIdentifierKeys(userIdOrEmail, userEmail);
+  const deletedSet = new Set<string>();
+
+  try {
+    const common = localStorage.getItem('agent_medina_deleted_physical_ids_common');
+    if (common) {
+      const parsed = JSON.parse(common);
+      if (Array.isArray(parsed)) parsed.forEach(id => { if (id) deletedSet.add(String(id)); });
+    }
+  } catch (e) {}
+
+  for (const k of keys) {
+    try {
+      const raw = localStorage.getItem(DELETED_IDS_STORAGE_PREFIX + k);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          parsed.forEach(id => { if (id) deletedSet.add(String(id)); });
+        }
+      }
+    } catch (e) {}
+  }
+  return Array.from(deletedSet);
+}
+
+/**
+ * Registra un ID com a esborrat a totes les claus locals de l'usuari
+ */
+export function recordDeletedPhysicalId(recordOrSessionId: string, userIdOrEmail?: string, userEmail?: string): void {
+  if (!recordOrSessionId) return;
+  const keys = getUserIdentifierKeys(userIdOrEmail, userEmail);
+  const current = new Set<string>(getDeletedPhysicalIds(userIdOrEmail, userEmail));
+  current.add(String(recordOrSessionId));
+  const arr = Array.from(current);
+  const json = JSON.stringify(arr);
+
+  try {
+    localStorage.setItem('agent_medina_deleted_physical_ids_common', json);
+  } catch (e) {}
+
+  for (const k of keys) {
+    try {
+      localStorage.setItem(DELETED_IDS_STORAGE_PREFIX + k, json);
+    } catch (e) {}
+  }
+}
 
 /**
  * Normalitza i obté totes les claus vàlides associades a l'usuari (UID, email)
- * per evitar qualsevol pèrdua de dades o discrepància entre dispositius.
+ * per evitar qualsevol pèrdua de dades o discrepància entre dispositius (mòbil i ordinador).
  */
 export function getUserIdentifierKeys(userIdOrEmail?: string, userEmail?: string): string[] {
   const keys = new Set<string>();
@@ -57,13 +109,26 @@ export function getUserIdentifierKeys(userIdOrEmail?: string, userEmail?: string
     keys.add(userEmail.trim().toLowerCase());
   }
 
-  // Comprovar si tenim un perfil d'usuari desat a localStorage
+  // Comprovar si tenim un perfil d'usuari desat a localStorage amb qualsevol clau
   try {
     const raw = localStorage.getItem('agent_medina_user_profile');
     if (raw) {
       const u = JSON.parse(raw);
       if (u?.uid) keys.add(String(u.uid).trim().toLowerCase());
       if (u?.email) keys.add(String(u.email).trim().toLowerCase());
+    }
+  } catch (e) {}
+
+  try {
+    const lastUid = localStorage.getItem('agent_medina_last_uid');
+    if (lastUid) {
+      keys.add(lastUid.trim().toLowerCase());
+      const rawUser = localStorage.getItem('agent_medina_user_' + lastUid);
+      if (rawUser) {
+        const u = JSON.parse(rawUser);
+        if (u?.uid) keys.add(String(u.uid).trim().toLowerCase());
+        if (u?.email) keys.add(String(u.email).trim().toLowerCase());
+      }
     }
   } catch (e) {}
 
@@ -74,11 +139,42 @@ export function getUserIdentifierKeys(userIdOrEmail?: string, userEmail?: string
   return Array.from(keys);
 }
 
+function resolveBestUserIdentifiers(userIdOrEmail?: string, userEmail?: string): { uid: string; email: string } {
+  let email = (userEmail || '').trim().toLowerCase();
+  let uid = (userIdOrEmail || '').trim();
+
+  if (!email && uid && uid.includes('@')) {
+    email = uid.toLowerCase();
+  }
+
+  if (!email || !uid) {
+    try {
+      const lastUid = localStorage.getItem('agent_medina_last_uid');
+      if (lastUid && !uid) uid = lastUid.trim();
+
+      const raw = localStorage.getItem('agent_medina_user_profile') || 
+                  (lastUid ? localStorage.getItem('agent_medina_user_' + lastUid) : null);
+      if (raw) {
+        const u = JSON.parse(raw);
+        if (!uid && u?.uid) uid = String(u.uid).trim();
+        if (!email && u?.email) email = String(u.email).trim().toLowerCase();
+      }
+    } catch (e) {}
+  }
+
+  if (!uid && email) uid = email;
+  if (!email && uid) email = uid.includes('@') ? uid.toLowerCase() : `${uid}@agentmedina.cat`;
+
+  return { uid: uid || 'anonymous', email: email || 'aspirant@agentmedina.cat' };
+}
+
 /**
  * Llegeix els registres físics locals consultant totes les claus de l'usuari
+ * i filtrant qualsevol ID eliminat
  */
 export function getPhysicalRecords(userIdOrEmail: string, userEmail?: string): PhysicalScoreRecord[] {
   const keys = getUserIdentifierKeys(userIdOrEmail, userEmail);
+  const deletedSet = new Set<string>(getDeletedPhysicalIds(userIdOrEmail, userEmail));
   const recordMap = new Map<string, PhysicalScoreRecord>();
 
   for (const k of keys) {
@@ -88,7 +184,7 @@ export function getPhysicalRecords(userIdOrEmail: string, userEmail?: string): P
         const parsed = JSON.parse(raw);
         if (Array.isArray(parsed)) {
           parsed.forEach((r: PhysicalScoreRecord) => {
-            if (r && r.id) recordMap.set(r.id, r);
+            if (r && r.id && !deletedSet.has(r.id)) recordMap.set(r.id, r);
           });
         }
       }
@@ -102,9 +198,11 @@ export function getPhysicalRecords(userIdOrEmail: string, userEmail?: string): P
 
 /**
  * Llegeix les sessions de pràctica locals consultant totes les claus de l'usuari
+ * i filtrant qualsevol ID eliminat
  */
 export function getPracticeSessions(userIdOrEmail: string, userEmail?: string): PracticeSessionRecord[] {
   const keys = getUserIdentifierKeys(userIdOrEmail, userEmail);
+  const deletedSet = new Set<string>(getDeletedPhysicalIds(userIdOrEmail, userEmail));
   const sessionMap = new Map<string, PracticeSessionRecord>();
 
   for (const k of keys) {
@@ -114,7 +212,7 @@ export function getPracticeSessions(userIdOrEmail: string, userEmail?: string): 
         const parsed = JSON.parse(raw);
         if (Array.isArray(parsed)) {
           parsed.forEach((s: PracticeSessionRecord) => {
-            if (s && s.id) sessionMap.set(s.id, s);
+            if (s && s.id && !deletedSet.has(s.id)) sessionMap.set(s.id, s);
           });
         }
       }
@@ -147,36 +245,52 @@ function saveSessionsToAllLocalKeys(keys: string[], sessions: PracticeSessionRec
 
 /**
  * Sincronitza tots els registres cap al servidor (Express Server + Supabase + Firebase)
- * amb quàdruple redundància perquè cap dada es perdi al mòbil ni en canviar d'ordinador.
+ * amb quàdruple redundància i suport estricte de tombstones (elements eliminats).
  */
 export async function syncPhysicalDataToCloud(
   userId: string,
   userEmail?: string,
   updatedRecords?: PhysicalScoreRecord[],
-  updatedSessions?: PracticeSessionRecord[]
+  updatedSessions?: PracticeSessionRecord[],
+  additionalDeletedIds?: string[],
+  isAuthoritative: boolean = false
 ): Promise<void> {
-  const records = updatedRecords ?? getPhysicalRecords(userId, userEmail);
-  const sessions = updatedSessions ?? getPracticeSessions(userId, userEmail);
-  const email = (userEmail || 'aspirant@agentmedina.cat').toLowerCase().trim();
-  const uid = (userId || email).trim();
+  const ids = resolveBestUserIdentifiers(userId, userEmail);
+  const uid = ids.uid;
+  const email = ids.email;
+  const deletedIds = Array.from(new Set([
+    ...getDeletedPhysicalIds(uid, email),
+    ...(additionalDeletedIds || [])
+  ]));
+  const deletedSet = new Set<string>(deletedIds);
+
+  const rawRecords = updatedRecords ?? getPhysicalRecords(uid, email);
+  const rawSessions = updatedSessions ?? getPracticeSessions(uid, email);
+
+  // Assegurar neteja total d'elements esborrats
+  const records = rawRecords.filter(r => r && r.id && !deletedSet.has(r.id));
+  const sessions = rawSessions.filter(s => s && s.id && !deletedSet.has(s.id));
 
   // 1. Sincronització immediata al servidor de Node.js Express de l'aplicació
   try {
     fetch('/api/physical-records/sync', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      keepalive: true,
       body: JSON.stringify({
         userId: uid,
         email,
         records,
-        sessions
+        sessions,
+        deletedIds,
+        authoritative: isAuthoritative
       })
     }).catch(err => {
       console.warn('[SERVER-SYNC] Fallida en sync al backend local:', err);
     });
   } catch (err) {}
 
-  // 2. Sincronització a Supabase a la taula 'matches' sota l'identificador d'estat persistent
+  // 2. Sincronització a Supabase (matches: physical_data_* i user_data_*)
   try {
     const supabaseIds = Array.from(new Set([
       `physical_data_${uid}`,
@@ -197,7 +311,31 @@ export async function syncPhysicalDataToCloud(
           email,
           records,
           sessions,
+          deletedIds,
           updatedAt: Date.now()
+        }
+      }, { onConflict: 'id' });
+    }
+
+    // També incrustem les dades físiques dins de user_data_${uid} per a redundància garantida amb el perfil
+    const userGameDataIds = Array.from(new Set([`user_data_${uid}`, `user_data_${email}`]));
+    for (const ugId of userGameDataIds) {
+      const { data: existingData } = await supabase.from('matches').select('state').eq('id', ugId).maybeSingle();
+      const prevState = existingData?.state || {};
+      await supabase.from('matches').upsert({
+        id: ugId,
+        player1_id: uid,
+        player2_id: 'cloud_sync',
+        current_turn: uid,
+        status: 'active',
+        score_p1: records.length,
+        score_p2: sessions.length,
+        state: {
+          ...prevState,
+          physicalRecords: records,
+          practiceSessions: sessions,
+          physicalDeletedIds: deletedIds,
+          physicalUpdatedAt: Date.now()
         }
       }, { onConflict: 'id' });
     }
@@ -214,55 +352,82 @@ export async function syncPhysicalDataToCloud(
         email,
         records,
         sessions,
+        deletedIds,
         updatedAt: Date.now()
       }, { merge: true });
     }
   } catch (err) {
     console.warn('Error sincronitzant físiques a Firebase:', err);
   }
+
+  // Emetre esdeveniment local per refrescar components
+  if (typeof window !== 'undefined') {
+    try {
+      window.dispatchEvent(new CustomEvent('physical_records_updated', {
+        detail: { records, sessions, userId: uid }
+      }));
+    } catch (e) {}
+  }
 }
 
 /**
- * Descarrega les dades del servidor (Server API + Supabase + Firebase) i actualitza les dades locals
+ * Descarrega les dades del servidor (Server API + Supabase + Firebase) i actualitza les dades locals.
+ * Filtra de forma estricta qualsevol registre o sessió que hagi estat eliminada
+ * de manera que MAI no pugui reaparèixer en recarregar la pàgina o clicar a sincronitzar.
  */
 export async function fetchPhysicalDataFromCloud(
   userId: string,
   userEmail?: string
 ): Promise<{ records: PhysicalScoreRecord[]; sessions: PracticeSessionRecord[] }> {
-  const normEmail = (userEmail || '').trim().toLowerCase();
-  const normUid = (userId || '').trim();
+  const ids = resolveBestUserIdentifiers(userId, userEmail);
+  const normUid = ids.uid;
+  const normEmail = ids.email;
 
-  let serverRecords: PhysicalScoreRecord[] = [];
-  let serverSessions: PracticeSessionRecord[] = [];
-  let receivedFromServer = false;
+  const deletedSet = new Set<string>(getDeletedPhysicalIds(normUid, normEmail));
+  const collectedRecords: PhysicalScoreRecord[] = [];
+  const collectedSessions: PracticeSessionRecord[] = [];
 
   // 1. Descarregar des del Servidor Express de l'App
   try {
     const query = new URLSearchParams();
-    if (normUid) query.set('userId', normUid);
-    if (normEmail) query.set('email', normEmail);
+    if (normUid && normUid !== 'anonymous') query.set('userId', normUid);
+    if (normEmail && !normEmail.includes('@agentmedina.cat')) query.set('email', normEmail);
 
     const res = await fetch(`/api/physical-records?${query.toString()}`);
     if (res.ok) {
       const json = await res.json();
+      if (Array.isArray(json.deletedIds)) {
+        json.deletedIds.forEach((id: string) => {
+          if (id) {
+            deletedSet.add(String(id));
+            recordDeletedPhysicalId(id, normUid, normEmail);
+          }
+        });
+      }
       if (Array.isArray(json.records)) {
-        serverRecords = json.records;
-        receivedFromServer = true;
+        json.records.forEach((r: any) => {
+          if (r && r.id && !deletedSet.has(r.id)) collectedRecords.push(r);
+        });
       }
       if (Array.isArray(json.sessions)) {
-        serverSessions = json.sessions;
-        receivedFromServer = true;
+        json.sessions.forEach((s: any) => {
+          if (s && s.id && !deletedSet.has(s.id)) collectedSessions.push(s);
+        });
       }
     }
   } catch (err) {
     console.warn('[SERVER-FETCH] Error recuperant dades del servidor Node:', err);
   }
 
-  // 2. Descarregar des de Supabase si al servidor estava buit o per seguretat
-  let supabaseRecords: PhysicalScoreRecord[] = [];
-  let supabaseSessions: PracticeSessionRecord[] = [];
+  // 2. Descarregar des de Supabase (matches: physical_data_* i user_data_*)
   try {
-    const candidates = [`physical_data_${normUid}`, `physical_data_${normEmail}`].filter(Boolean);
+    const candidates = [
+      `physical_data_${normUid}`,
+      `physical_data_${normEmail}`,
+      `user_data_${normUid}`,
+      `user_data_${normEmail}`
+    ].filter(Boolean);
+
     for (const candId of candidates) {
       const { data } = await supabase
         .from('matches')
@@ -270,72 +435,162 @@ export async function fetchPhysicalDataFromCloud(
         .eq('id', candId)
         .maybeSingle();
 
-      if (data?.state?.records && Array.isArray(data.state.records) && data.state.records.length > 0) {
-        supabaseRecords = data.state.records;
+      const st = data?.state;
+      if (st) {
+        if (Array.isArray(st.deletedIds)) {
+          st.deletedIds.forEach((id: string) => {
+            if (id) {
+              deletedSet.add(String(id));
+              recordDeletedPhysicalId(id, normUid, normEmail);
+            }
+          });
+        }
+        if (Array.isArray(st.physicalDeletedIds)) {
+          st.physicalDeletedIds.forEach((id: string) => {
+            if (id) {
+              deletedSet.add(String(id));
+              recordDeletedPhysicalId(id, normUid, normEmail);
+            }
+          });
+        }
+        if (Array.isArray(st.records)) {
+          st.records.forEach((r: any) => { if (r && r.id && !deletedSet.has(r.id)) collectedRecords.push(r); });
+        }
+        if (Array.isArray(st.physicalRecords)) {
+          st.physicalRecords.forEach((r: any) => { if (r && r.id && !deletedSet.has(r.id)) collectedRecords.push(r); });
+        }
+        if (Array.isArray(st.sessions)) {
+          st.sessions.forEach((s: any) => { if (s && s.id && !deletedSet.has(s.id)) collectedSessions.push(s); });
+        }
+        if (Array.isArray(st.practiceSessions)) {
+          st.practiceSessions.forEach((s: any) => { if (s && s.id && !deletedSet.has(s.id)) collectedSessions.push(s); });
+        }
       }
-      if (data?.state?.sessions && Array.isArray(data.state.sessions) && data.state.sessions.length > 0) {
-        supabaseSessions = data.state.sessions;
-      }
-      if (supabaseRecords.length > 0) break;
     }
   } catch (err) {
     console.warn('Error consultant dades a Supabase:', err);
   }
 
   // 3. Descarregar des de Firebase Firestore
-  let firebaseRecords: PhysicalScoreRecord[] = [];
-  let firebaseSessions: PracticeSessionRecord[] = [];
-  if (db && normUid) {
-    try {
-      const docRef = doc(db, 'physical_records', normUid);
-      const snap = await getDoc(docRef);
-      if (snap.exists()) {
-        const d = snap.data();
-        if (d?.records && Array.isArray(d.records)) firebaseRecords = d.records;
-        if (d?.sessions && Array.isArray(d.sessions)) firebaseSessions = d.sessions;
+  if (db && (normUid || normEmail)) {
+    const firestoreKeys = [normUid, normEmail].filter(Boolean);
+    for (const fKey of firestoreKeys) {
+      try {
+        const docRef = doc(db, 'physical_records', fKey);
+        const snap = await getDoc(docRef);
+        if (snap.exists()) {
+          const d = snap.data();
+          if (Array.isArray(d?.deletedIds)) {
+            d.deletedIds.forEach((id: string) => {
+              if (id) {
+                deletedSet.add(String(id));
+                recordDeletedPhysicalId(id, normUid, normEmail);
+              }
+            });
+          }
+          if (d?.records && Array.isArray(d.records)) {
+            d.records.forEach((r: any) => { if (r && r.id && !deletedSet.has(r.id)) collectedRecords.push(r); });
+          }
+          if (d?.sessions && Array.isArray(d.sessions)) {
+            d.sessions.forEach((s: any) => { if (s && s.id && !deletedSet.has(s.id)) collectedSessions.push(s); });
+          }
+        }
+      } catch (err) {
+        console.warn('Error consultant dades a Firebase:', err);
       }
-    } catch (err) {
-      console.warn('Error consultant dades a Firebase:', err);
     }
   }
 
-  // Prioritat de fonts al núvol: si el servidor ha tornat dades o Supabase o Firebase
-  const cloudRecords = serverRecords.length > 0 
-    ? serverRecords 
-    : (supabaseRecords.length > 0 ? supabaseRecords : firebaseRecords);
-
-  const cloudSessions = serverSessions.length > 0 
-    ? serverSessions 
-    : (supabaseSessions.length > 0 ? supabaseSessions : firebaseSessions);
-
-  // Fusionar amb locals
+  // 4. Fusionar TOTS els registres (locals + tots els del núvol) sense duplicats i SENSE elements eliminats
   const localRecords = getPhysicalRecords(normUid, normEmail);
   const recordMap = new Map<string, PhysicalScoreRecord>();
 
-  // Si hi ha dades al núvol, afegir-les
-  cloudRecords.forEach(r => { if (r && r.id) recordMap.set(r.id, r); });
-  // Afegir també les locals per si l'usuari en va crear sense connexió
-  localRecords.forEach(r => { if (r && r.id) recordMap.set(r.id, r); });
+  collectedRecords.forEach(r => {
+    if (r && r.id && !deletedSet.has(r.id)) recordMap.set(r.id, r);
+  });
+  localRecords.forEach(r => {
+    if (r && r.id && !deletedSet.has(r.id)) {
+      const prev = recordMap.get(r.id);
+      if (!prev || (r.createdAt || 0) >= (prev.createdAt || 0)) {
+        recordMap.set(r.id, r);
+      }
+    }
+  });
 
-  const mergedRecords = Array.from(recordMap.values()).sort((a, b) => b.createdAt - a.createdAt);
+  const mergedRecords = Array.from(recordMap.values()).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 
+  // 5. Fusionar TOTES les sessions de pràctica filtrant eliminades
   const localSessions = getPracticeSessions(normUid, normEmail);
   const sessionMap = new Map<string, PracticeSessionRecord>();
-  cloudSessions.forEach(s => { if (s && s.id) sessionMap.set(s.id, s); });
-  localSessions.forEach(s => { if (s && s.id) sessionMap.set(s.id, s); });
-  const mergedSessions = Array.from(sessionMap.values()).sort((a, b) => b.createdAt - a.createdAt);
 
-  // Desar a totes les claus locals de l'usuari
+  collectedSessions.forEach(s => {
+    if (s && s.id && !deletedSet.has(s.id)) sessionMap.set(s.id, s);
+  });
+  localSessions.forEach(s => {
+    if (s && s.id && !deletedSet.has(s.id)) {
+      const prev = sessionMap.get(s.id);
+      if (!prev || (s.createdAt || 0) >= (prev.createdAt || 0)) {
+        sessionMap.set(s.id, s);
+      }
+    }
+  });
+
+  const mergedSessions = Array.from(sessionMap.values()).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+
+  // 6. Desar a totes les claus locals de l'usuari
   const keys = getUserIdentifierKeys(normUid, normEmail);
   saveRecordsToAllLocalKeys(keys, mergedRecords);
   saveSessionsToAllLocalKeys(keys, mergedSessions);
 
-  // Si el servidor local no tenia les dades actualitzades, sincronitzar-les
-  if (!receivedFromServer || serverRecords.length < mergedRecords.length) {
-    syncPhysicalDataToCloud(normUid, normEmail, mergedRecords, mergedSessions).catch(console.warn);
+  // 7. Sincronitzar de tornada a totes les bases de dades per assegurar que el núvol estigui net
+  syncPhysicalDataToCloud(normUid, normEmail, mergedRecords, mergedSessions, Array.from(deletedSet), true).catch(console.warn);
+
+  // Notificar canvi a la interfície
+  if (typeof window !== 'undefined') {
+    try {
+      window.dispatchEvent(new CustomEvent('physical_records_updated', {
+        detail: { records: mergedRecords, sessions: mergedSessions }
+      }));
+    } catch (e) {}
   }
 
   return { records: mergedRecords, sessions: mergedSessions };
+}
+
+/**
+ * Força una sincronització bidireccional completa garantint que cap element esborrat no ressusciti
+ * i retorna el total de registres i sessions vàlids sincronitzats.
+ */
+export async function forceSyncAllPhysicalData(
+  userId: string,
+  userEmail?: string
+): Promise<{ recordsCount: number; sessionsCount: number; success: boolean }> {
+  try {
+    const ids = resolveBestUserIdentifiers(userId, userEmail);
+    const deletedIds = getDeletedPhysicalIds(ids.uid, ids.email);
+
+    // 1. Purga immediata local dels registres esborrats
+    const currentRecords = getPhysicalRecords(ids.uid, ids.email);
+    const currentSessions = getPracticeSessions(ids.uid, ids.email);
+    const keys = getUserIdentifierKeys(ids.uid, ids.email);
+    saveRecordsToAllLocalKeys(keys, currentRecords);
+    saveSessionsToAllLocalKeys(keys, currentSessions);
+
+    // 2. Descarregar des del núvol filtrant tombstones i afegint nous tombstones que el servidor tingui
+    const result = await fetchPhysicalDataFromCloud(userId, userEmail);
+
+    // 3. Sincronitzar de forma autoritativa
+    await syncPhysicalDataToCloud(userId, userEmail, result.records, result.sessions, deletedIds, true);
+
+    return {
+      recordsCount: result.records.length,
+      sessionsCount: result.sessions.length,
+      success: true
+    };
+  } catch (err) {
+    console.warn('forceSyncAllPhysicalData error:', err);
+    return { recordsCount: 0, sessionsCount: 0, success: false };
+  }
 }
 
 /**
@@ -370,7 +625,8 @@ export function savePhysicalRecord(
 
 /**
  * Elimina un registre de forma directa i el sincronitza immediatament al servidor
- * esborrant-lo del servidor Express, de Supabase i de Firebase.
+ * esborrant-lo del servidor Express, de Supabase i de Firebase i registrant un tombstone
+ * permanent perquè no pugui ressuscitar mai en recarregar o sincronitzar.
  */
 export function deletePhysicalRecord(userIdOrEmail: string, recordId: string, userEmail?: string): boolean {
   try {
@@ -378,19 +634,22 @@ export function deletePhysicalRecord(userIdOrEmail: string, recordId: string, us
     const normUid = (userIdOrEmail || '').trim();
     const keys = getUserIdentifierKeys(normUid, normEmail);
 
+    // 1. Registrar tombstone perquè cap recàrrega ni consulta al núvol el torni a afegir
+    recordDeletedPhysicalId(recordId, normUid, normEmail);
+
     const records = getPhysicalRecords(normUid, normEmail);
     const filtered = records.filter(r => r.id !== recordId);
     saveRecordsToAllLocalKeys(keys, filtered);
 
-    // 1. Crida immediata al servidor per esborrar
+    // 2. Crida immediata al servidor per esborrar
     try {
       fetch(`/api/physical-records/${encodeURIComponent(recordId)}?userId=${encodeURIComponent(normUid)}&email=${encodeURIComponent(normEmail)}`, {
         method: 'DELETE'
       }).catch(console.warn);
     } catch (e) {}
 
-    // 2. Sincronitzar l'estat actualitzat al servidor, Supabase i Firebase
-    syncPhysicalDataToCloud(normUid, normEmail, filtered).catch(console.warn);
+    // 3. Sincronitzar de forma autoritativa a totes les bases de dades amb la tombstone
+    syncPhysicalDataToCloud(normUid, normEmail, filtered, undefined, [recordId], true).catch(console.warn);
 
     return true;
   } catch (e) {
@@ -462,7 +721,8 @@ export function savePracticeSession(
 }
 
 /**
- * Elimina una sessió de pràctica
+ * Elimina una sessió de pràctica de forma definitiva i la sincronitza a totes les capes
+ * registrant el tombstone perquè mai no pugui ressuscitar.
  */
 export function deletePracticeSession(userIdOrEmail: string, sessionId: string, userEmail?: string): boolean {
   try {
@@ -470,12 +730,22 @@ export function deletePracticeSession(userIdOrEmail: string, sessionId: string, 
     const normUid = (userIdOrEmail || '').trim();
     const keys = getUserIdentifierKeys(normUid, normEmail);
 
+    // 1. Registrar tombstone
+    recordDeletedPhysicalId(sessionId, normUid, normEmail);
+
     const sessions = getPracticeSessions(normUid, normEmail);
     const filtered = sessions.filter(s => s.id !== sessionId);
     saveSessionsToAllLocalKeys(keys, filtered);
 
-    // Sincronitzar l'estat actualitzat al servidor, Supabase i Firebase
-    syncPhysicalDataToCloud(normUid, normEmail, undefined, filtered).catch(console.warn);
+    // 2. Crida immediata al servidor per esborrar
+    try {
+      fetch(`/api/physical-records/${encodeURIComponent(sessionId)}?userId=${encodeURIComponent(normUid)}&email=${encodeURIComponent(normEmail)}`, {
+        method: 'DELETE'
+      }).catch(console.warn);
+    } catch (e) {}
+
+    // 3. Sincronitzar de forma autoritativa al servidor, Supabase i Firebase
+    syncPhysicalDataToCloud(normUid, normEmail, undefined, filtered, [sessionId], true).catch(console.warn);
 
     return true;
   } catch (e) {

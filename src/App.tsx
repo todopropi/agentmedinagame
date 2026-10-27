@@ -51,10 +51,12 @@ import { InAppNotification, NotificationPreferences } from './types';
 import { requestPushPermissionAndToken, subscribeToUserNotifications, showNativePushAlert, fetchUserNotificationsList } from './utils/pushNotifications';
 import { AudioEngine } from './utils/audio';
 import confetti from 'canvas-confetti';
-import { Upload, Sparkles, AlertCircle, Copy, Check, X, ShieldAlert, Megaphone, Flame, CheckCircle2, TrendingUp, BookOpen, Dumbbell, Layers, LogOut } from 'lucide-react';
+import { Upload, Sparkles, AlertCircle, Copy, Check, X, ShieldAlert, Megaphone, Flame, CheckCircle2, TrendingUp, BookOpen, Dumbbell, Layers, LogOut, Building2 } from 'lucide-react';
 import { ModeFisiques } from './components/ModeFisiques';
 import { ModeSelectorHub } from './components/ModeSelectorHub';
+import { ModePoliciaLocal } from './components/policiaLocal/ModePoliciaLocal';
 import { OfficialEmblem } from './components/OfficialEmblem';
+import { fetchPhysicalDataFromCloud } from './utils/physicalStorage';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(() => {
@@ -74,19 +76,32 @@ export default function App() {
       return false;
     }
   });
-  const [mainMode, setMainMode] = useState<'hub' | 'estudi' | 'fisiques'>(() => {
+  const [mainMode, setMainMode] = useState<'hub' | 'estudi' | 'fisiques' | 'policia_local'>(() => {
     try {
-      // 1. Si hi ha un entrenament actiu en curs a físiques, restaurar directament
-      const activeWorkout = localStorage.getItem('agent_medina_active_pb_workout');
-      if (activeWorkout) {
-        const parsed = JSON.parse(activeWorkout);
-        if (parsed?.isWorkoutActive && Date.now() - (parsed.lastUpdated || 0) < 24 * 3600 * 1000) {
-          return 'fisiques';
-        }
+      // 1. Si hi ha un entrenament actiu en curs a físiques (press de banca o cursa), restaurar directament
+      const pbActive = localStorage.getItem('agent_medina_active_pb_workout');
+      if (pbActive) {
+        try {
+          const parsed = JSON.parse(pbActive);
+          if (parsed?.isWorkoutActive && Date.now() - (parsed.lastUpdated || 0) < 24 * 3600 * 1000) {
+            return 'fisiques';
+          }
+        } catch {}
       }
+
+      const clActive = localStorage.getItem('agent_medina_active_cl_workout');
+      if (clActive) {
+        try {
+          const parsed = JSON.parse(clActive);
+          if (parsed?.isPlaying && Date.now() - (parsed.lastUpdated || 0) < 30 * 60 * 1000) {
+            return 'fisiques';
+          }
+        } catch {}
+      }
+
       // 2. Si no, restaurar l'últim mode que l'usuari tenia obert
       const saved = localStorage.getItem('agent_medina_main_mode');
-      if (saved === 'estudi' || saved === 'fisiques') return saved;
+      if (saved === 'estudi' || saved === 'fisiques' || saved === 'policia_local') return saved;
       if (saved === 'hub') return 'hub';
     } catch (e) {}
     return 'hub';
@@ -678,6 +693,8 @@ export default function App() {
             unlockedMaterialIds: enriched.unlockedMaterialIds || [],
             purchasedMaterialIds: enriched.purchasedMaterialIds || []
           });
+          // Descarregar i sincronitzar immediatament els entrenaments i registres físics del núvol
+          fetchPhysicalDataFromCloud(uid, enriched.email).catch(console.warn);
         }
       });
     }
@@ -719,6 +736,8 @@ export default function App() {
             unlockedMaterialIds: enriched.unlockedMaterialIds || [],
             purchasedMaterialIds: enriched.purchasedMaterialIds || []
           });
+          // Descarregar i sincronitzar immediatament els entrenaments i registres físics del núvol
+          fetchPhysicalDataFromCloud(uid, enriched.email).catch(console.warn);
         }
       } else {
         if (!getStoredLocalUser()) {
@@ -1306,6 +1325,7 @@ export default function App() {
             wildcardsCount: enriched.wildcardsCount || 0,
             unlockedShieldIds: enriched.unlockedShieldIds || []
           });
+          fetchPhysicalDataFromCloud(uid, enriched.email).catch(console.warn);
         }} />
       </div>
     );
@@ -1349,6 +1369,18 @@ export default function App() {
     );
   }
 
+  if (mainMode === 'policia_local') {
+    return (
+      <ModePoliciaLocal
+        user={currentUser}
+        onBackToHub={() => {
+          AudioEngine.playClick();
+          setMainMode('hub');
+        }}
+      />
+    );
+  }
+
   if (mainMode === 'fisiques') {
     return (
       <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col selection:bg-amber-500 selection:text-slate-950">
@@ -1376,6 +1408,16 @@ export default function App() {
             </div>
 
             <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setMainMode('policia_local')}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-sky-500/10 hover:bg-sky-500/20 text-sky-400 border border-sky-500/30 rounded-xl text-xs font-bold transition-all cursor-pointer"
+              >
+                <Building2 className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Policia Local</span>
+                <span className="sm:hidden">PL</span>
+              </button>
+
               <button
                 type="button"
                 onClick={() => setMainMode('estudi')}
@@ -1484,6 +1526,7 @@ export default function App() {
         onOpenLegalModal={() => setShowLegalModal(true)}
         sectionLabels={sectionConfig as any}
         onSwitchToFisiques={() => setMainMode('fisiques')}
+        onSwitchToPoliciaLocal={() => setMainMode('policia_local')}
         onOpenHub={() => setMainMode('hub')}
       />
 

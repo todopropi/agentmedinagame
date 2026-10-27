@@ -47,7 +47,8 @@ import {
   ChevronDown,
   ChevronUp,
   MessageCircle,
-  AlertTriangle
+  AlertTriangle,
+  X
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -420,9 +421,25 @@ export const PressBancaView: React.FC<PressBancaViewProps> = ({ user, onRecordSa
     return null;
   }, []);
 
-  const [selectedExerciseIds, setSelectedExerciseIds] = useState<string[]>(
-    initialWorkout?.selectedExerciseIds || ['pb_barra', 'flexions_triceps', 'fons_triceps_pit']
-  );
+  const [selectedExerciseIds, setSelectedExerciseIds] = useState<string[]>(() => {
+    if (initialWorkout?.selectedExerciseIds && initialWorkout.selectedExerciseIds.length > 0) {
+      return initialWorkout.selectedExerciseIds;
+    }
+    try {
+      const savedEx = localStorage.getItem('agent_medina_pb_selected_exercises');
+      if (savedEx) {
+        const parsed = JSON.parse(savedEx);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {}
+    return ['pb_barra', 'flexions_triceps', 'fons_triceps_pit'];
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('agent_medina_pb_selected_exercises', JSON.stringify(selectedExerciseIds));
+    } catch {}
+  }, [selectedExerciseIds]);
   const [isWorkoutActive, setIsWorkoutActive] = useState<boolean>(
     Boolean(initialWorkout?.isWorkoutActive)
   );
@@ -444,10 +461,12 @@ export const PressBancaView: React.FC<PressBancaViewProps> = ({ user, onRecordSa
     if (initialWorkout?.isResting && initialWorkout.restEndTime) {
       const remaining = Math.max(0, Math.round((initialWorkout.restEndTime - Date.now()) / 1000));
       if (remaining > 0) {
-        return { isResting: true, secondsLeft: remaining, endTime: initialWorkout.restEndTime };
+        return { isResting: true, secondsLeft: remaining, endTime: initialWorkout.restEndTime, wasRestFinishedWhileAway: false };
+      } else {
+        return { isResting: false, secondsLeft: 0, endTime: null, wasRestFinishedWhileAway: true };
       }
     }
-    return { isResting: false, secondsLeft: 0, endTime: null };
+    return { isResting: false, secondsLeft: 0, endTime: null, wasRestFinishedWhileAway: false };
   }, [initialWorkout]);
 
   const [isResting, setIsResting] = useState<boolean>(initialRest.isResting);
@@ -455,6 +474,14 @@ export const PressBancaView: React.FC<PressBancaViewProps> = ({ user, onRecordSa
   const [restEndTime, setRestEndTime] = useState<number | null>(initialRest.endTime);
   const restEndTimeRef = useRef<number | null>(initialRest.endTime);
   restEndTimeRef.current = restEndTime;
+
+  // Notificació visual si el descans s'ha completat en tornar de WhatsApp
+  const [restFinishedWhileAwayNotice, setRestFinishedWhileAwayNotice] = useState<string | null>(() => {
+    if (initialRest.wasRestFinishedWhileAway) {
+      return "🎉 El temps de descans ha finalitzat mentre eres a WhatsApp! Estàs a punt per continuar la teva sessió.";
+    }
+    return null;
+  });
 
   // Refs per al salvat ràpid en segon pla (pagehide / freeze / visibilitychange)
   const isWorkoutActiveRef = useRef(isWorkoutActive);
@@ -531,22 +558,53 @@ export const PressBancaView: React.FC<PressBancaViewProps> = ({ user, onRecordSa
 
   // Listener d'emergència en canvi d'app o navegació a WhatsApp
   useEffect(() => {
-    const handleEmergencySave = () => {
+    const handleVisibilitySync = () => {
+      if (document.visibilityState === 'visible') {
+        // En tornar de WhatsApp o una altra app, recalcularem el descans en mil·lisegons exactes
+        if (isRestingRef.current && restEndTimeRef.current) {
+          const remaining = Math.max(0, Math.round((restEndTimeRef.current - Date.now()) / 1000));
+          setRestSecondsLeft(remaining);
+          restSecondsLeftRef.current = remaining;
+          if (remaining <= 0) {
+            if (restTimerRef.current) {
+              clearInterval(restTimerRef.current);
+              restTimerRef.current = null;
+            }
+            setIsResting(false);
+            isRestingRef.current = false;
+            setRestEndTime(null);
+            restEndTimeRef.current = null;
+            setRestFinishedWhileAwayNotice("🎉 El temps de descans ha finalitzat mentre eres a WhatsApp! Estàs a punt per continuar la teva sessió.");
+            AudioEngine.playRestFinishedChime();
+            saveWorkoutSnapshot({ isResting: false, restEndTime: null, restTotalSeconds: 0 });
+          }
+        }
+      } else {
+        // En marxar a WhatsApp, desar immediatament l'estat actual
+        if (isWorkoutActiveRef.current) {
+          saveWorkoutSnapshot();
+        }
+      }
+    };
+
+    const handleBeforeUnload = () => {
       if (isWorkoutActiveRef.current) {
         saveWorkoutSnapshot();
       }
     };
 
-    window.addEventListener('pagehide', handleEmergencySave);
-    window.addEventListener('beforeunload', handleEmergencySave);
-    window.addEventListener('freeze', handleEmergencySave);
-    document.addEventListener('visibilitychange', handleEmergencySave);
+    window.addEventListener('pagehide', handleBeforeUnload);
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    window.addEventListener('freeze', handleBeforeUnload);
+    document.addEventListener('visibilitychange', handleVisibilitySync);
+    window.addEventListener('focus', handleVisibilitySync);
 
     return () => {
-      window.removeEventListener('pagehide', handleEmergencySave);
-      window.removeEventListener('beforeunload', handleEmergencySave);
-      window.removeEventListener('freeze', handleEmergencySave);
-      document.removeEventListener('visibilitychange', handleEmergencySave);
+      window.removeEventListener('pagehide', handleBeforeUnload);
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      window.removeEventListener('freeze', handleBeforeUnload);
+      document.removeEventListener('visibilitychange', handleVisibilitySync);
+      window.removeEventListener('focus', handleVisibilitySync);
     };
   }, []);
 
@@ -627,17 +685,21 @@ export const PressBancaView: React.FC<PressBancaViewProps> = ({ user, onRecordSa
           const remaining = Math.round((restEndTimeRef.current - Date.now()) / 1000);
           if (remaining > 0) {
             setRestSecondsLeft(remaining);
+            restSecondsLeftRef.current = remaining;
           } else {
-            // El descans ha acabat mentre l'usuari era fora
+            // El descans ha acabat mentre l'usuari era a WhatsApp o fora
             if (restTimerRef.current) {
               clearInterval(restTimerRef.current);
               restTimerRef.current = null;
             }
             setIsResting(false);
+            isRestingRef.current = false;
             setRestSecondsLeft(0);
+            restSecondsLeftRef.current = 0;
             setRestEndTime(null);
             restEndTimeRef.current = null;
             saveWorkoutSnapshot({ isResting: false, restEndTime: null, restTotalSeconds: 0 });
+            setRestFinishedWhileAwayNotice("🎉 El temps de descans de 2 minuts ha finalitzat mentre eres a WhatsApp! Ja estàs a punt per a la següent sèrie.");
             AudioEngine.playRestFinishedChime();
           }
         }
@@ -656,13 +718,20 @@ export const PressBancaView: React.FC<PressBancaViewProps> = ({ user, onRecordSa
     if (selectedExerciseIds.length === 0) return;
     const now = Date.now();
     setIsWorkoutActive(true);
+    isWorkoutActiveRef.current = true;
     setCurrentExerciseIndex(0);
+    currentExerciseIndexRef.current = 0;
     setCurrentSetIndex(1);
+    currentSetIndexRef.current = 1;
     setIsResting(false);
+    isRestingRef.current = false;
     setRestEndTime(null);
     restEndTimeRef.current = null;
     setCompletedSets([]);
+    completedSetsRef.current = [];
     setWorkoutStartTime(now);
+    workoutStartTimeRef.current = now;
+    setRestFinishedWhileAwayNotice(null);
 
     saveWorkoutSnapshot({
       isWorkoutActive: true,
@@ -737,6 +806,7 @@ export const PressBancaView: React.FC<PressBancaViewProps> = ({ user, onRecordSa
     if (!currentEx) return;
 
     AudioEngine.playClick();
+    setRestFinishedWhileAwayNotice(null);
 
     const isPb = currentEx.id === 'pb_barra' || currentEx.id === 'pb_escalfament';
     const newSetDetail: PracticeSetDetail = {
@@ -749,6 +819,7 @@ export const PressBancaView: React.FC<PressBancaViewProps> = ({ user, onRecordSa
 
     const nextSets = [...completedSets, newSetDetail];
     setCompletedSets(nextSets);
+    completedSetsRef.current = nextSets;
     setShowSetInputModal(false);
 
     const isLastSetOfEx = currentSetIndex >= currentEx.series;
@@ -763,9 +834,13 @@ export const PressBancaView: React.FC<PressBancaViewProps> = ({ user, onRecordSa
       const targetEnd = Date.now() + restSec * 1000;
       const nextExIdx = currentExerciseIndex + 1;
       setCurrentExerciseIndex(nextExIdx);
+      currentExerciseIndexRef.current = nextExIdx;
       setCurrentSetIndex(1);
+      currentSetIndexRef.current = 1;
       setIsResting(true);
+      isRestingRef.current = true;
       setRestSecondsLeft(restSec);
+      restSecondsLeftRef.current = restSec;
       setRestEndTime(targetEnd);
       restEndTimeRef.current = targetEnd;
 
@@ -783,8 +858,11 @@ export const PressBancaView: React.FC<PressBancaViewProps> = ({ user, onRecordSa
       const targetEnd = Date.now() + restSec * 1000;
       const nextSetIdx = currentSetIndex + 1;
       setCurrentSetIndex(nextSetIdx);
+      currentSetIndexRef.current = nextSetIdx;
       setIsResting(true);
+      isRestingRef.current = true;
       setRestSecondsLeft(restSec);
+      restSecondsLeftRef.current = restSec;
       setRestEndTime(targetEnd);
       restEndTimeRef.current = targetEnd;
 
@@ -804,9 +882,12 @@ export const PressBancaView: React.FC<PressBancaViewProps> = ({ user, onRecordSa
       restTimerRef.current = null;
     }
     setIsResting(false);
+    isRestingRef.current = false;
     setRestSecondsLeft(0);
+    restSecondsLeftRef.current = 0;
     setRestEndTime(null);
     restEndTimeRef.current = null;
+    setRestFinishedWhileAwayNotice(null);
     saveWorkoutSnapshot({ isResting: false, restEndTime: null, restTotalSeconds: 0 });
     AudioEngine.playClick();
   };
@@ -852,15 +933,19 @@ export const PressBancaView: React.FC<PressBancaViewProps> = ({ user, onRecordSa
       restTimerRef.current = null;
     }
     setIsResting(false);
+    isRestingRef.current = false;
     setIsWorkoutActive(false);
+    isWorkoutActiveRef.current = false;
     setRestEndTime(null);
     restEndTimeRef.current = null;
     setShowSetInputModal(false);
+    setRestFinishedWhileAwayNotice(null);
     try {
       localStorage.removeItem('agent_medina_active_pb_workout');
     } catch (e) {}
     if (finalSets) {
       setCompletedSets(finalSets);
+      completedSetsRef.current = finalSets;
     }
     setShowWorkoutFeelingsModal(true);
     AudioEngine.stopAllSounds();
@@ -970,7 +1055,7 @@ export const PressBancaView: React.FC<PressBancaViewProps> = ({ user, onRecordSa
 
   const saveWorkoutFeelings = () => {
     const durationMinutes = Math.max(1, Math.round((Date.now() - workoutStartTime) / 60000));
-    savePracticeSession(user.email || user.uid, {
+    savePracticeSession(user.uid || user.email, {
       userId: user.uid,
       userEmail: user.email || 'aspirant@agentmedina.cat',
       date: new Date().toISOString().split('T')[0],
@@ -981,7 +1066,7 @@ export const PressBancaView: React.FC<PressBancaViewProps> = ({ user, onRecordSa
       feelingsText: feelingsNotes,
       durationMinutes,
       setsDetail: completedSets
-    });
+    }, user.email);
 
     loadPracticeHistory();
     setShowWorkoutFeelingsModal(false);
@@ -989,7 +1074,8 @@ export const PressBancaView: React.FC<PressBancaViewProps> = ({ user, onRecordSa
   };
 
   const activeExercises = DEFAULT_PRACTICE_EXERCISES.filter(e => selectedExerciseIds.includes(e.id));
-  const currentRunningExercise = activeExercises[currentExerciseIndex] || activeExercises[0];
+  const safeExercises = activeExercises.length > 0 ? activeExercises : DEFAULT_PRACTICE_EXERCISES;
+  const currentRunningExercise = safeExercises[currentExerciseIndex] || safeExercises[0];
 
   return (
     <div className="space-y-6">
@@ -1436,9 +1522,26 @@ export const PressBancaView: React.FC<PressBancaViewProps> = ({ user, onRecordSa
                   <span>Sessió protegida • Si canvies d'aplicació o vas a WhatsApp, el teu progrés no es perd</span>
                 </span>
                 <span className="text-[10px] text-emerald-400/80 font-bold uppercase tracking-wider hidden sm:inline">
-                  Auto-desat ✓
+                  Rellotge Real ✓
                 </span>
               </div>
+              {/* Banner de descans finalitzat en tornar de WhatsApp */}
+              {restFinishedWhileAwayNotice && (
+                <div className="p-4 bg-gradient-to-r from-emerald-500/20 via-teal-500/20 to-emerald-500/20 border border-emerald-500/50 rounded-2xl flex items-center justify-between gap-3 text-emerald-200 text-xs font-bold shadow-lg animate-in slide-in-from-top-2 duration-300">
+                  <div className="flex items-center gap-2.5">
+                    <Sparkles className="w-5 h-5 text-emerald-400 shrink-0" />
+                    <span>{restFinishedWhileAwayNotice}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setRestFinishedWhileAwayNotice(null)}
+                    className="p-1 hover:bg-emerald-500/20 rounded-lg text-emerald-300 hover:text-white cursor-pointer"
+                    title="Descartar avís"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
 
               <div className="bg-gradient-to-b from-slate-900 to-slate-950 border border-slate-800 rounded-3xl p-6 sm:p-8 space-y-6 shadow-2xl text-center">
                 <div className="flex items-center justify-between text-xs font-bold text-slate-400">

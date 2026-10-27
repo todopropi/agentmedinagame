@@ -14,12 +14,14 @@ import {
   LogOut, 
   Sparkles,
   TrendingUp,
-  ShieldCheck
+  ShieldCheck,
+  Building2,
+  Timer
 } from 'lucide-react';
 
 interface ModeSelectorHubProps {
   user: UserProfile;
-  onSelectMode: (mode: 'estudi' | 'fisiques') => void;
+  onSelectMode: (mode: 'estudi' | 'fisiques' | 'policia_local') => void;
   onLogout: () => void;
 }
 
@@ -86,12 +88,52 @@ export const ModeSelectorHub: React.FC<ModeSelectorHubProps> = ({
           </p>
         </div>
 
-        {/* DUES TARGETES PRINCIPALS */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6 max-w-3xl mx-auto">
-          {/* 1. TARGETA MODE ESTUDI */}
+        {/* Banner de recuperació si hi ha un entrenament actiu en curs */}
+        {(() => {
+          try {
+            const raw = localStorage.getItem('agent_medina_active_pb_workout');
+            if (raw) {
+              const parsed = JSON.parse(raw);
+              if (parsed?.isWorkoutActive && Date.now() - (parsed.lastUpdated || 0) < 24 * 3600 * 1000) {
+                return (
+                  <div 
+                    onClick={() => onSelectMode('fisiques')}
+                    className="max-w-3xl mx-auto p-4 bg-gradient-to-r from-amber-500/20 via-amber-500/10 to-amber-500/20 border-2 border-amber-500/50 rounded-2xl flex items-center justify-between gap-3 shadow-lg cursor-pointer hover:border-amber-400 transition-all group"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
+                        <Dumbbell className="w-5 h-5 animate-bounce" />
+                      </div>
+                      <div className="text-left">
+                        <span className="text-xs font-black text-amber-300 uppercase tracking-wider block">
+                          Sessió d'Entrenament Activa en Curs
+                        </span>
+                        <span className="text-xs text-slate-200">
+                          Tens una sessió activa de Press de Banca i Rutina ({parsed.completedSets?.length || 0} sèries fetes). Fes clic per reprendre-la!
+                        </span>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      className="px-4 py-2 bg-gradient-to-r from-amber-500 to-amber-600 text-slate-950 font-black text-xs rounded-xl shadow-md group-hover:from-amber-400 group-hover:to-amber-500 transition-all flex items-center gap-1.5 shrink-0"
+                    >
+                      <span>Reprendre</span>
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                );
+              }
+            }
+          } catch (e) {}
+          return null;
+        })()}
+
+        {/* TRES TARGETES PRINCIPALS */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-5 max-w-5xl w-full mx-auto">
+          {/* 1. TARGETA MODE ESTUDI (MOSSOS D'ESQUADRA) */}
           <div 
             onClick={() => onSelectMode('estudi')}
-            className="group relative bg-gradient-to-b from-slate-900/90 to-slate-950 border-2 border-slate-800 hover:border-sky-500/60 rounded-3xl p-5 sm:p-7 flex flex-col justify-between transition-all duration-300 transform hover:-translate-y-1 hover:shadow-xl hover:shadow-sky-500/10 cursor-pointer overflow-hidden"
+            className="group relative bg-gradient-to-b from-slate-900/90 to-slate-950 border-2 border-slate-800 hover:border-sky-500/60 rounded-3xl p-5 sm:p-6 flex flex-col justify-between transition-all duration-300 transform hover:-translate-y-1 hover:shadow-xl hover:shadow-sky-500/10 cursor-pointer overflow-hidden"
           >
             <div className="absolute top-0 right-0 w-28 h-28 bg-sky-500/5 rounded-full blur-2xl group-hover:bg-sky-500/10 transition-colors" />
 
@@ -102,92 +144,144 @@ export const ModeSelectorHub: React.FC<ModeSelectorHubProps> = ({
 
               <div>
                 <span className="text-[10px] font-black text-sky-400 uppercase tracking-widest block">
-                  TEÒRICA I TEMARI
+                  COSSOS GENERALS CATALUNYA
                 </span>
-                <h3 className="text-xl font-black text-white group-hover:text-sky-300 transition-colors mt-0.5">
-                  Mode Estudi
+                <h3 className="text-lg sm:text-xl font-black text-white group-hover:text-sky-300 transition-colors mt-0.5">
+                  Mossos d'Esquadra
                 </h3>
                 <p className="text-xs text-slate-400 mt-1 leading-relaxed">
-                  Gamificació del temari complet amb el Tauler de l'Oca de 150 caselles, duels 1v1 contra altres aspirants, Camí a l'ISPC i banc de preguntes.
+                  Gamificació del temari oficial CME amb Tauler de l'Oca de 150 caselles, duels 1v1, Camí a l'ISPC i botiga d'escuts.
                 </p>
               </div>
 
               {/* Llista de característiques clau */}
-              <div className="space-y-2 pt-2 border-t border-slate-800/80 text-xs text-slate-300">
+              <div className="space-y-2 pt-2 border-t border-slate-800/80 text-[11px] text-slate-300">
                 <div className="flex items-center gap-2">
-                  <Dice5 className="w-4 h-4 text-sky-400 shrink-0" />
-                  <span>Tauler de l'Oca de 150 caselles (Nivells Llegendari i Suprem)</span>
+                  <Dice5 className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                  <span>Tauler de 150 caselles</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Swords className="w-4 h-4 text-sky-400 shrink-0" />
-                  <span>Duels 1v1 en directe amb alertes de torn i Tocs</span>
+                  <Swords className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                  <span>Duels 1v1 interactius</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Award className="w-4 h-4 text-sky-400 shrink-0" />
-                  <span>Camí a l'ISPC, repàs intel·ligent i botiga d'escuts</span>
+                  <Award className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                  <span>Camí a l'ISPC i repàs intel·ligent</span>
                 </div>
               </div>
             </div>
 
-            <div className="pt-6 mt-6 border-t border-slate-800 flex items-center justify-between">
+            <div className="pt-5 mt-5 border-t border-slate-800 flex items-center justify-between">
               <span className="text-xs font-bold text-sky-400 group-hover:translate-x-1 transition-transform flex items-center gap-1.5">
-                <span>Accedir a Mode Estudi</span>
-                <ArrowRight className="w-4 h-4" />
+                <span>Accedir a Mossos</span>
+                <ArrowRight className="w-3.5 h-3.5" />
               </span>
-              <span className="text-[11px] text-slate-500 font-mono">
-                {user.xp} XP acumulats
+              <span className="text-[10px] text-slate-500 font-mono">
+                {user.xp} XP
               </span>
             </div>
           </div>
 
-          {/* 2. TARGETA MODE FÍSIQUES */}
+          {/* 2. TARGETA MODE POLICIA LOCAL (NOU!) */}
           <div 
-            onClick={() => onSelectMode('fisiques')}
-            className="group relative bg-gradient-to-b from-slate-900/90 to-slate-950 border-2 border-slate-800 hover:border-amber-500/60 rounded-3xl p-7 sm:p-8 flex flex-col justify-between transition-all duration-300 transform hover:-translate-y-1 hover:shadow-2xl hover:shadow-amber-500/10 cursor-pointer overflow-hidden"
+            onClick={() => onSelectMode('policia_local')}
+            className="group relative bg-gradient-to-b from-slate-900/90 to-slate-950 border-2 border-slate-800 hover:border-cyan-500/60 rounded-3xl p-5 sm:p-6 flex flex-col justify-between transition-all duration-300 transform hover:-translate-y-1 hover:shadow-xl hover:shadow-cyan-500/10 cursor-pointer overflow-hidden"
           >
-            <div className="absolute top-0 right-0 w-32 h-32 bg-amber-500/5 rounded-full blur-2xl group-hover:bg-amber-500/10 transition-colors" />
+            <div className="absolute top-0 right-0 w-28 h-28 bg-cyan-500/5 rounded-full blur-2xl group-hover:bg-cyan-500/10 transition-colors" />
 
-            <div className="space-y-5">
-              <div className="w-16 h-16 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center group-hover:scale-110 transition-transform">
-                <Dumbbell className="w-8 h-8" />
+            <div className="space-y-4">
+              <div className="w-12 h-12 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 flex items-center justify-center group-hover:scale-105 transition-transform">
+                <Building2 className="w-6 h-6" />
               </div>
 
               <div>
-                <span className="text-xs font-black text-amber-400 uppercase tracking-widest block">
-                  PREPARACIÓ FÍSICA CME
+                <span className="text-[10px] font-black text-cyan-400 uppercase tracking-widest block">
+                  ADMINISTRACIÓ LOCAL
                 </span>
-                <h3 className="text-2xl font-black text-white group-hover:text-amber-300 transition-colors mt-0.5">
-                  Mode Físiques
+                <h3 className="text-lg sm:text-xl font-black text-white group-hover:text-cyan-300 transition-colors mt-0.5">
+                  Policia Local
                 </h3>
-                <p className="text-xs sm:text-sm text-slate-400 mt-2 leading-relaxed">
-                  Simulacres i entrenament oficial de les 3 proves de la convocatòria: Press de Banca a cadència de 1,02s, Circuït d'Agilitat i Cursa Llançadora amb àudio continu.
+                <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+                  Sant Esteve Sesrovires, El Vendrell, Cubelles, Temari Comú, Cultura General independent, convocatòries i notes oficials.
                 </p>
               </div>
 
               {/* Llista de característiques clau */}
-              <div className="space-y-2 pt-2 border-t border-slate-800/80 text-xs text-slate-300">
+              <div className="space-y-2 pt-2 border-t border-slate-800/80 text-[11px] text-slate-300">
                 <div className="flex items-center gap-2">
-                  <Dumbbell className="w-4 h-4 text-amber-400 shrink-0" />
-                  <span>Press de Banca: 10s prep, metrònom de 1,02s, sirena i pràctica</span>
+                  <Building2 className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                  <span>Bases i temaris per municipis</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Activity className="w-4 h-4 text-amber-400 shrink-0" />
-                  <span>Cursa Llançadora (Course Navette) amb àudio continu català</span>
+                  <ShieldCheck className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                  <span>Temari comú i Cultura General</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Zap className="w-4 h-4 text-amber-400 shrink-0" />
-                  <span>Circuït d'Agilitat reglamentari amb cronòmetre i barems</span>
+                  <Timer className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                  <span>Simulacres i expedient de notes</span>
                 </div>
               </div>
             </div>
 
-            <div className="pt-6 mt-6 border-t border-slate-800 flex items-center justify-between">
-              <span className="text-xs font-bold text-amber-400 group-hover:translate-x-1 transition-transform flex items-center gap-1.5">
-                <span>Accedir a Mode Físiques</span>
-                <ArrowRight className="w-4 h-4" />
+            <div className="pt-5 mt-5 border-t border-slate-800 flex items-center justify-between">
+              <span className="text-xs font-bold text-cyan-400 group-hover:translate-x-1 transition-transform flex items-center gap-1.5">
+                <span>Accedir a Policia Local</span>
+                <ArrowRight className="w-3.5 h-3.5" />
               </span>
-              <span className="text-[11px] text-amber-500/80 font-bold uppercase tracking-wider">
-                NOU MÒDUL 2026
+              <span className="text-[9px] font-black px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 uppercase tracking-wider">
+                NOU
+              </span>
+            </div>
+          </div>
+
+          {/* 3. TARGETA MODE FÍSIQUES */}
+          <div 
+            onClick={() => onSelectMode('fisiques')}
+            className="group relative bg-gradient-to-b from-slate-900/90 to-slate-950 border-2 border-slate-800 hover:border-amber-500/60 rounded-3xl p-5 sm:p-6 flex flex-col justify-between transition-all duration-300 transform hover:-translate-y-1 hover:shadow-xl hover:shadow-amber-500/10 cursor-pointer overflow-hidden"
+          >
+            <div className="absolute top-0 right-0 w-28 h-28 bg-amber-500/5 rounded-full blur-2xl group-hover:bg-amber-500/10 transition-colors" />
+
+            <div className="space-y-4">
+              <div className="w-12 h-12 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center group-hover:scale-105 transition-transform">
+                <Dumbbell className="w-6 h-6" />
+              </div>
+
+              <div>
+                <span className="text-[10px] font-black text-amber-400 uppercase tracking-widest block">
+                  PROVES FÍSIQUES OFICIALS
+                </span>
+                <h3 className="text-lg sm:text-xl font-black text-white group-hover:text-amber-300 transition-colors mt-0.5">
+                  Mode Físiques
+                </h3>
+                <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+                  Press de Banca a metrònom de 1,02s, Circuït d'Agilitat reglamentari i Cursa Llançadora oficial amb àudio continu català.
+                </p>
+              </div>
+
+              {/* Llista de característiques clau */}
+              <div className="space-y-2 pt-2 border-t border-slate-800/80 text-[11px] text-slate-300">
+                <div className="flex items-center gap-2">
+                  <Dumbbell className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                  <span>Press de Banca a 1,02s i sirena</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Activity className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                  <span>Cursa Llançadora amb veu catalana</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Zap className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                  <span>Circuit d'Agilitat i barems</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-5 mt-5 border-t border-slate-800 flex items-center justify-between">
+              <span className="text-xs font-bold text-amber-400 group-hover:translate-x-1 transition-transform flex items-center gap-1.5">
+                <span>Accedir a Físiques</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </span>
+              <span className="text-[10px] text-amber-400/90 font-bold uppercase tracking-wider">
+                BAREMS 2026
               </span>
             </div>
           </div>

@@ -67,11 +67,34 @@ export const CircuitAgilitatView: React.FC<CircuitAgilitatViewProps> = ({ user, 
   }, [user.email, user.uid]);
 
   useEffect(() => {
+    const handleVisibilitySync = () => {
+      if (stopwatchState === 'running' && startTimeRef.current > 0) {
+        const diff = Date.now() - startTimeRef.current;
+        setElapsedMs(diff);
+      }
+    };
+
+    const handleSaveSnapshot = () => {
+      try {
+        localStorage.setItem('agent_medina_fisiques_tab', 'circuit');
+        localStorage.setItem('agent_medina_main_mode', 'fisiques');
+      } catch (e) {}
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilitySync);
+    window.addEventListener('focus', handleVisibilitySync);
+    window.addEventListener('pagehide', handleSaveSnapshot);
+    window.addEventListener('beforeunload', handleSaveSnapshot);
+
     return () => {
       clearInterval(stopwatchIntervalRef.current);
       clearInterval(countdownIntervalRef.current);
+      document.removeEventListener('visibilitychange', handleVisibilitySync);
+      window.removeEventListener('focus', handleVisibilitySync);
+      window.removeEventListener('pagehide', handleSaveSnapshot);
+      window.removeEventListener('beforeunload', handleSaveSnapshot);
     };
-  }, []);
+  }, [stopwatchState]);
 
   const startCountdown = () => {
     setStopwatchState('countdown');

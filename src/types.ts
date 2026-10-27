@@ -8,17 +8,23 @@ export type PoliceRankCategory =
 export interface PoliceRank {
   id: string;
   name: string;
+  title?: string;
   category: PoliceRankCategory;
   categoryName: string;
   minXp: number;
   badgeIcon: string;
+  badge?: string;
+  icon?: string;
   color: string;
+  description?: string;
+  desc?: string;
 }
 
 export interface UserProfile {
   uid: string;
   email: string;
   displayName: string;
+  gender?: 'home' | 'dona' | string;
   photoURL?: string;
   isAdmin?: boolean;
   role?: 'admin' | 'question_editor' | 'aspirant';
@@ -68,11 +74,14 @@ export interface UserProfile {
 }
 
 export interface TopicMasteryRecord {
+  topicId?: string;
   mastery: number; // 0 - 100
   lastPlayedAt: number; // timestamp en ms
+  lastActivityTimestamp?: number;
   gamesPlayed?: number;
   correctAnswers?: number;
   totalAnswers?: number;
+  totalQuestions?: number;
   tier?: 'none' | 'bronze' | 'silver' | 'gold';
 }
 
@@ -213,6 +222,7 @@ export interface AcademyContactInfo {
 
 export interface FinishedDuelResult {
   id: string;
+  gameId?: string;
   player1Id: string;
   player1Name: string;
   player1Avatar?: string;
@@ -292,7 +302,7 @@ export interface SpecializedShield {
   unitat: string;
   preuMerits: number;
   descripcio: string;
-  escutTipus: 'tedax' | 'gei' | 'brimo' | 'arro' | 'transit' | 'canina' | 'subaquatica' | 'subsol' | 'medis_aeris' | 'cgic' | 'tedax_canina' | 'gu_bcn' | 'policia_local' | 'mediacio' | 'drons' | 'escortes' | 'ispc';
+  escutTipus: 'tedax' | 'gei' | 'brimo' | 'arro' | 'transit' | 'canina' | 'subaquatica' | 'subsol' | 'medis_aeris' | 'cgic' | 'tedax_canina' | 'gu_bcn' | 'policia_local' | 'mediacio' | 'drons' | 'escortes' | 'ispc' | 'generic_pvc';
   colorPrincipal: string;
   colorSecundari: string;
   imageUrl?: string;

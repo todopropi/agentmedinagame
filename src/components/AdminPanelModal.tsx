@@ -1869,7 +1869,7 @@ Molts ànims i a seguir sumant mèrits!`
                         ];
                         const answeredIds = new Set(answeredList);
                         const correctIds = new Set(selectedUserForReport.correct_questions || selectedUserForReport.correctQuestionIds || []);
-                        const failedIds = new Set(selectedUserForReport.failed_questions || selectedUserForReport.failedQuestionIds || []);
+                        const failedIds = new Set<string>((selectedUserForReport.failed_questions || selectedUserForReport.failedQuestionIds || []) as string[]);
                         
                         const answeredCount = answeredIds.size;
                         const neverSeenCount = Math.max(0, totalBank - answeredCount);

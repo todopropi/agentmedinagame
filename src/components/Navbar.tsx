@@ -29,7 +29,8 @@ import {
   Flame,
   X,
   Dumbbell,
-  Layers
+  Layers,
+  Building2
 } from 'lucide-react';
 import { STORE_UNITS_LIST } from '../data/badges';
 import { QUESTIONS_BANK } from '../data/questionsBank';
@@ -49,6 +50,7 @@ interface NavbarProps {
   onOpenLegalModal?: () => void;
   sectionLabels?: Record<string, string>;
   onSwitchToFisiques?: () => void;
+  onSwitchToPoliciaLocal?: () => void;
   onOpenHub?: () => void;
 }
 
@@ -65,6 +67,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenLegalModal,
   sectionLabels,
   onSwitchToFisiques,
+  onSwitchToPoliciaLocal,
   onOpenHub
 }) => {
   const [isRanksOpen, setIsRanksOpen] = useState(false);
@@ -207,6 +210,22 @@ export const Navbar: React.FC<NavbarProps> = ({
 
             {/* Right: Mode Físiques + Racha + Mèrits Chip + Notificacions + User Avatar */}
             <div className="flex items-center gap-1.5 sm:gap-2">
+              {/* Botó Policia Local (Mobile) */}
+              {onSwitchToPoliciaLocal && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    AudioEngine.playClick();
+                    onSwitchToPoliciaLocal();
+                  }}
+                  title="Anar a Policia Local"
+                  className="flex items-center gap-1 px-2 py-1 bg-gradient-to-r from-sky-500 to-cyan-600 text-slate-950 rounded-full text-[10px] font-black shadow-sm active:scale-95 touch-manipulation cursor-pointer"
+                >
+                  <Building2 className="w-3 h-3" />
+                  <span>PL</span>
+                </button>
+              )}
+
               {/* Botó Mode Físiques (Mobile) */}
               {onSwitchToFisiques && (
                 <button
@@ -390,6 +409,22 @@ export const Navbar: React.FC<NavbarProps> = ({
                   />
                 </div>
               </div>
+
+              {/* Botó Policia Local (Desktop) */}
+              {onSwitchToPoliciaLocal && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    AudioEngine.playClick();
+                    onSwitchToPoliciaLocal();
+                  }}
+                  title="Anar a Mode Policia Local (Municipis, Temari Comú i Cultura General)"
+                  className="px-3 py-1.5 bg-gradient-to-r from-sky-500 to-cyan-600 hover:from-sky-400 hover:to-cyan-500 text-slate-950 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer shadow-md shadow-sky-500/20 active:scale-95"
+                >
+                  <Building2 className="w-3.5 h-3.5" />
+                  <span>POLICIA LOCAL</span>
+                </button>
+              )}
 
               {/* Botó Mode Físiques (Desktop) */}
               {onSwitchToFisiques && (

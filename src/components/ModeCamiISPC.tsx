@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { UserProfile, Question } from '../types';
 import { 
   CAMI_AMBITS, 
@@ -60,8 +60,21 @@ export const ModeCamiISPC: React.FC<ModeCamiISPCProps> = ({
 }) => {
   const [selectedAmbitFilter, setSelectedAmbitFilter] = useState<'all' | 'Àmbit A' | 'Àmbit B' | 'Àmbit C' | 'Àmbit D'>('all');
   const [touchedFilter, setTouchedFilter] = useState<'all' | 'pending' | 'completed'>('all');
-  const [activeMissionTopic, setActiveMissionTopic] = useState<CamiTopicInfo | null>(null);
-  const [isDailyExpressActive, setIsDailyExpressActive] = useState<boolean>(false);
+  const initialActiveMission = useMemo(() => {
+    try {
+      const raw = localStorage.getItem(`agent_medina_active_cami_mission_${user.uid}`);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed?.missionQuestions?.length > 0 && !parsed.missionFinished && Date.now() - (parsed.lastUpdated || 0) < 12 * 3600 * 1000) {
+          return parsed;
+        }
+      }
+    } catch {}
+    return null;
+  }, [user.uid]);
+
+  const [activeMissionTopic, setActiveMissionTopic] = useState<CamiTopicInfo | null>(() => initialActiveMission?.activeMissionTopic || null);
+  const [isDailyExpressActive, setIsDailyExpressActive] = useState<boolean>(() => Boolean(initialActiveMission?.isDailyExpressActive));
   const [sessionAnsweredIds, setSessionAnsweredIds] = useState<Set<string>>(new Set());
 
   // Autorització d'administrador per visualitzar el recompte de preguntes
@@ -94,13 +107,33 @@ export const ModeCamiISPC: React.FC<ModeCamiISPCProps> = ({
   // Recompte de preguntes visible si l'usuari és admin o si l'admin ho ha autoritzat
   const canShowQuestionCounts = isAdmin || adminAuthShowQuestionsCount;
   
-  // Mission Runner States
-  const [missionQuestions, setMissionQuestions] = useState<Question[]>([]);
-  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
-  const [selectedOption, setSelectedOption] = useState<number | null>(null);
-  const [isAnswerSubmitted, setIsAnswerSubmitted] = useState(false);
-  const [missionCorrectCount, setMissionCorrectCount] = useState(0);
+  // Mission Runner States (Protegits contra canvi a WhatsApp i recàrregues de pàgina)
+  const [missionQuestions, setMissionQuestions] = useState<Question[]>(() => initialActiveMission?.missionQuestions || []);
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState<number>(() => initialActiveMission?.currentQuestionIndex || 0);
+  const [selectedOption, setSelectedOption] = useState<number | null>(() => initialActiveMission?.selectedOption ?? null);
+  const [isAnswerSubmitted, setIsAnswerSubmitted] = useState<boolean>(() => Boolean(initialActiveMission?.isAnswerSubmitted));
+  const [missionCorrectCount, setMissionCorrectCount] = useState<number>(() => initialActiveMission?.missionCorrectCount || 0);
   const [missionFinished, setMissionFinished] = useState(false);
+
+  // Desar la missió en curs en temps real
+  useEffect(() => {
+    try {
+      if (missionQuestions.length > 0 && !missionFinished) {
+        localStorage.setItem(`agent_medina_active_cami_mission_${user.uid}`, JSON.stringify({
+          missionQuestions,
+          currentQuestionIndex,
+          selectedOption,
+          isAnswerSubmitted,
+          missionCorrectCount,
+          activeMissionTopic,
+          isDailyExpressActive,
+          lastUpdated: Date.now()
+        }));
+      } else {
+        localStorage.removeItem(`agent_medina_active_cami_mission_${user.uid}`);
+      }
+    } catch {}
+  }, [missionQuestions, currentQuestionIndex, selectedOption, isAnswerSubmitted, missionCorrectCount, missionFinished, activeMissionTopic, isDailyExpressActive, user.uid]);
 
   // Chest Modal State
   const [showChestModal, setShowChestModal] = useState(false);

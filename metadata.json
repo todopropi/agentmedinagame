@@ -1,6 +1,6 @@
 {
-  "name": "+ fisicas agentmedinagame",
-  "description": "Aplicació de joc interactiu per al teu futur.",
+  "name": "Agent medina PL",
+  "description": "Agent Medina Game",
   "requestFramePermissions": [],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"

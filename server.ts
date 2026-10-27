@@ -11,7 +11,8 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = 3000;
 
-app.use(express.json());
+app.use(express.json({ limit: '100mb' }));
+app.use(express.urlencoded({ extended: true, limit: '100mb' }));
 
 // Configuració VAPID (Web Push Protocol estàndard per a Android Chrome i navegadors moderns)
 const VAPID_KEYS_FILE = path.join(__dirname, 'vapid-keys.json');
@@ -436,6 +437,7 @@ interface UserPhysicalData {
   email: string;
   records: any[];
   sessions: any[];
+  deletedIds?: string[];
   updatedAt: number;
 }
 
@@ -477,21 +479,53 @@ function getUserPhysicalRecordsFromServer(userId?: string, email?: string) {
   const byEmail = normEmail ? physicalDataStore[normEmail] : null;
   const byUid = normUid ? physicalDataStore[normUid] : null;
 
-  const data = byEmail || byUid || {
-    userId: userId || '',
-    email: email || '',
+  // Unió de tots els IDs eliminats (tombstones) per evitar qualsevol resurrecció
+  const deletedSet = new Set<string>();
+  (byEmail?.deletedIds || []).forEach(id => { if (id) deletedSet.add(String(id)); });
+  (byUid?.deletedIds || []).forEach(id => { if (id) deletedSet.add(String(id)); });
+
+  const data: UserPhysicalData = {
+    userId: userId || byEmail?.userId || byUid?.userId || '',
+    email: email || byEmail?.email || byUid?.email || '',
     records: [],
     sessions: [],
-    updatedAt: Date.now()
+    deletedIds: Array.from(deletedSet),
+    updatedAt: Math.max(byEmail?.updatedAt || 0, byUid?.updatedAt || 0, Date.now())
   };
 
-  // Assegurar unificació si tant email com uid existeixen
-  if (byEmail && byUid && byEmail !== byUid) {
-    const recordMap = new Map();
-    byEmail.records.forEach((r: any) => recordMap.set(r.id, r));
-    byUid.records.forEach((r: any) => recordMap.set(r.id, r));
-    data.records = Array.from(recordMap.values()).sort((a: any, b: any) => b.createdAt - a.createdAt);
+  const recordMap = new Map<string, any>();
+  const sessionMap = new Map<string, any>();
+
+  if (byEmail) {
+    (byEmail.records || []).forEach((r: any) => {
+      if (r && r.id && !deletedSet.has(r.id)) recordMap.set(r.id, r);
+    });
+    (byEmail.sessions || []).forEach((s: any) => {
+      if (s && s.id && !deletedSet.has(s.id)) sessionMap.set(s.id, s);
+    });
   }
+
+  if (byUid) {
+    (byUid.records || []).forEach((r: any) => {
+      if (r && r.id && !deletedSet.has(r.id)) {
+        const prev = recordMap.get(r.id);
+        if (!prev || (r.createdAt || 0) >= (prev.createdAt || 0)) {
+          recordMap.set(r.id, r);
+        }
+      }
+    });
+    (byUid.sessions || []).forEach((s: any) => {
+      if (s && s.id && !deletedSet.has(s.id)) {
+        const prev = sessionMap.get(s.id);
+        if (!prev || (s.createdAt || 0) >= (prev.createdAt || 0)) {
+          sessionMap.set(s.id, s);
+        }
+      }
+    });
+  }
+
+  data.records = Array.from(recordMap.values()).sort((a: any, b: any) => (b.createdAt || 0) - (a.createdAt || 0));
+  data.sessions = Array.from(sessionMap.values()).sort((a: any, b: any) => (b.createdAt || 0) - (a.createdAt || 0));
 
   return data;
 }
@@ -506,13 +540,14 @@ app.get('/api/physical-records', (req, res) => {
     success: true,
     records: data.records || [],
     sessions: data.sessions || [],
+    deletedIds: data.deletedIds || [],
     updatedAt: data.updatedAt || Date.now()
   });
 });
 
-// 2. Sincronitzar (upsert complet) registres físics al servidor
+// 2. Sincronitzar registres físics al servidor (amb gestió autoritativa i tombstones)
 app.post('/api/physical-records/sync', (req, res) => {
-  const { userId, email, records, sessions } = req.body;
+  const { userId, email, records, sessions, deletedIds, authoritative } = req.body;
   if (!userId && !email) {
     return res.status(400).json({ error: 'Missing userId or email' });
   }
@@ -521,11 +556,64 @@ app.post('/api/physical-records/sync', (req, res) => {
   const normUid = (userId || '').trim().toLowerCase();
 
   const existing = getUserPhysicalRecordsFromServer(userId, email);
+
+  // Fusionar tombstones (IDs eliminats)
+  const tombstoneSet = new Set<string>(existing.deletedIds || []);
+  if (Array.isArray(deletedIds)) {
+    deletedIds.forEach(id => { if (id) tombstoneSet.add(String(id)); });
+  }
+
+  let mergedRecords: any[] = [];
+  let mergedSessions: any[] = [];
+
+  if (authoritative) {
+    // Mode autoritari: Si el client envia la llista neta després d'eliminar,
+    // s'utilitza la llista del client filtrant qualsevol element eliminat
+    const inRecords = Array.isArray(records) ? records : [];
+    const inSessions = Array.isArray(sessions) ? sessions : [];
+    mergedRecords = inRecords.filter(r => r && r.id && !tombstoneSet.has(r.id));
+    mergedSessions = inSessions.filter(s => s && s.id && !tombstoneSet.has(s.id));
+  } else {
+    // Mode fusió tolerant: fusionar garantint que cap ID esborrat no ressusciti mai
+    const recordMap = new Map<string, any>();
+    (existing.records || []).forEach((r: any) => {
+      if (r && r.id && !tombstoneSet.has(r.id)) recordMap.set(r.id, r);
+    });
+    (Array.isArray(records) ? records : []).forEach((r: any) => {
+      if (r && r.id && !tombstoneSet.has(r.id)) {
+        const prev = recordMap.get(r.id);
+        if (!prev || (r.createdAt || 0) >= (prev.createdAt || 0)) {
+          recordMap.set(r.id, r);
+        }
+      }
+    });
+
+    const sessionMap = new Map<string, any>();
+    (existing.sessions || []).forEach((s: any) => {
+      if (s && s.id && !tombstoneSet.has(s.id)) sessionMap.set(s.id, s);
+    });
+    (Array.isArray(sessions) ? sessions : []).forEach((s: any) => {
+      if (s && s.id && !tombstoneSet.has(s.id)) {
+        const prev = sessionMap.get(s.id);
+        if (!prev || (s.createdAt || 0) >= (prev.createdAt || 0)) {
+          sessionMap.set(s.id, s);
+        }
+      }
+    });
+
+    mergedRecords = Array.from(recordMap.values());
+    mergedSessions = Array.from(sessionMap.values());
+  }
+
+  mergedRecords.sort((a: any, b: any) => (b.createdAt || 0) - (a.createdAt || 0));
+  mergedSessions.sort((a: any, b: any) => (b.createdAt || 0) - (a.createdAt || 0));
+
   const updatedData: UserPhysicalData = {
-    userId: userId || existing.userId || '',
-    email: email || existing.email || '',
-    records: Array.isArray(records) ? records : (existing.records || []),
-    sessions: Array.isArray(sessions) ? sessions : (existing.sessions || []),
+    userId: userId || existing.userId || normUid,
+    email: email || existing.email || normEmail,
+    records: mergedRecords,
+    sessions: mergedSessions,
+    deletedIds: Array.from(tombstoneSet),
     updatedAt: Date.now()
   };
 
@@ -537,41 +625,49 @@ app.post('/api/physical-records/sync', (req, res) => {
   return res.json({
     success: true,
     recordsCount: updatedData.records.length,
-    sessionsCount: updatedData.sessions.length
+    sessionsCount: updatedData.sessions.length,
+    deletedIdsCount: tombstoneSet.size
   });
 });
 
-// 3. Eliminar directament un registre físic al servidor per ID
+// 3. Eliminar directament un registre físic o sessió al servidor per ID
 app.delete('/api/physical-records/:id', (req, res) => {
   const recordId = req.params.id;
-  const userId = String(req.query.userId || req.body.userId || '');
-  const email = String(req.query.email || req.body.email || '');
+  const userId = String(req.query.userId || req.body?.userId || '');
+  const email = String(req.query.email || req.body?.email || '');
 
   const normEmail = (email || '').trim().toLowerCase();
   const normUid = (userId || '').trim().toLowerCase();
 
   let deleted = false;
 
-  // Esborrar a totes les claus associades a l'usuari
+  // Actualitzar totes les claus pertinents
   const keysToUpdate = new Set<string>();
   if (normEmail) keysToUpdate.add(normEmail);
   if (normUid) keysToUpdate.add(normUid);
 
-  // Si no s'ha trobat cap clau directa, cercar en tots els perfils
-  if (keysToUpdate.size === 0) {
-    for (const key of Object.keys(physicalDataStore)) {
-      keysToUpdate.add(key);
-    }
+  for (const key of Object.keys(physicalDataStore)) {
+    keysToUpdate.add(key);
   }
 
   keysToUpdate.forEach(key => {
     if (physicalDataStore[key]) {
-      const prevLen = physicalDataStore[key].records.length;
-      physicalDataStore[key].records = physicalDataStore[key].records.filter((r: any) => r.id !== recordId);
-      if (physicalDataStore[key].records.length !== prevLen) {
-        deleted = true;
-        physicalDataStore[key].updatedAt = Date.now();
+      const p = physicalDataStore[key];
+      const prevRecLen = p.records?.length || 0;
+      const prevSessLen = p.sessions?.length || 0;
+
+      p.records = (p.records || []).filter((r: any) => r && r.id !== recordId);
+      p.sessions = (p.sessions || []).filter((s: any) => s && s.id !== recordId);
+
+      if (!p.deletedIds) p.deletedIds = [];
+      if (!p.deletedIds.includes(recordId)) {
+        p.deletedIds.push(recordId);
       }
+
+      if ((p.records?.length || 0) !== prevRecLen || (p.sessions?.length || 0) !== prevSessLen) {
+        deleted = true;
+      }
+      p.updatedAt = Date.now();
     }
   });
 
@@ -582,6 +678,85 @@ app.delete('/api/physical-records/:id', (req, res) => {
     deletedId: recordId,
     deleted
   });
+});
+
+// =================================================================
+// GESTIÓ DE L'ÀUDIO OFICIAL DE LA CURSA LLANÇADORA AL SERVIDOR
+// Permet que qualsevol usuari o administrador pugui pujar la pista
+// oficial perquè estigui disponible per a tots els usuaris de l'app.
+// =================================================================
+const PUBLIC_AUDIO_DIR = path.resolve(__dirname, 'public', 'audio');
+const DIST_AUDIO_DIR = path.resolve(__dirname, 'dist', 'audio');
+const OFFICIAL_AUDIO_NAME = 'cursa-llancadora-oficial.mp3';
+
+try {
+  if (!fs.existsSync(PUBLIC_AUDIO_DIR)) fs.mkdirSync(PUBLIC_AUDIO_DIR, { recursive: true });
+  if (!fs.existsSync(DIST_AUDIO_DIR)) fs.mkdirSync(DIST_AUDIO_DIR, { recursive: true });
+} catch (e) {}
+
+// Estat de l'àudio oficial al servidor
+app.get('/api/navette-audio-status', (req, res) => {
+  const publicAudioPath = path.join(PUBLIC_AUDIO_DIR, OFFICIAL_AUDIO_NAME);
+  const distAudioPath = path.join(DIST_AUDIO_DIR, OFFICIAL_AUDIO_NAME);
+  const exists = fs.existsSync(publicAudioPath) || fs.existsSync(distAudioPath);
+
+  let fileSize = 0;
+  try {
+    if (fs.existsSync(publicAudioPath)) {
+      fileSize = fs.statSync(publicAudioPath).size;
+    } else if (fs.existsSync(distAudioPath)) {
+      fileSize = fs.statSync(distAudioPath).size;
+    }
+  } catch (e) {}
+
+  return res.json({
+    success: true,
+    exists,
+    fileSize,
+    url: `/audio/${OFFICIAL_AUDIO_NAME}`
+  });
+});
+
+// Pujada de l'àudio oficial de la Cursa Llançadora al servidor
+app.post('/api/upload-navette-audio', (req, res) => {
+  try {
+    const publicAudioPath = path.join(PUBLIC_AUDIO_DIR, OFFICIAL_AUDIO_NAME);
+    const distAudioPath = path.join(DIST_AUDIO_DIR, OFFICIAL_AUDIO_NAME);
+
+    let buffer: Buffer | null = null;
+
+    if (req.body && req.body.audioBase64) {
+      const base64Data = req.body.audioBase64.replace(/^data:audio\/\w+;base64,/, '');
+      buffer = Buffer.from(base64Data, 'base64');
+    } else if (Buffer.isBuffer(req.body)) {
+      buffer = req.body;
+    }
+
+    if (!buffer || buffer.length === 0) {
+      return res.status(400).json({ error: 'No audio data received' });
+    }
+
+    // Escriure a /public/audio i /dist/audio
+    if (!fs.existsSync(PUBLIC_AUDIO_DIR)) fs.mkdirSync(PUBLIC_AUDIO_DIR, { recursive: true });
+    fs.writeFileSync(publicAudioPath, buffer);
+
+    if (fs.existsSync(path.resolve(__dirname, 'dist'))) {
+      if (!fs.existsSync(DIST_AUDIO_DIR)) fs.mkdirSync(DIST_AUDIO_DIR, { recursive: true });
+      fs.writeFileSync(distAudioPath, buffer);
+    }
+
+    console.log(`[AUDIO] 🎵 Àudio oficial de la Cursa Llançadora desat amb èxit (${(buffer.length / (1024 * 1024)).toFixed(2)} MB).`);
+
+    return res.json({
+      success: true,
+      message: 'Àudio oficial desat correctament al servidor per a tots els usuaris.',
+      url: `/audio/${OFFICIAL_AUDIO_NAME}`,
+      fileSize: buffer.length
+    });
+  } catch (err: any) {
+    console.error('Error desant fitxer àudio al servidor:', err);
+    return res.status(500).json({ error: 'Error processing audio upload', details: err?.message });
+  }
 });
 
 async function startServer() {

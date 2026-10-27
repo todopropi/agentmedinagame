@@ -4,7 +4,7 @@ import { PressBancaView } from './fisiques/PressBancaView';
 import { CircuitAgilitatView } from './fisiques/CircuitAgilitatView';
 import { CursaLlancadoraView } from './fisiques/CursaLlancadoraView';
 import { EstadistiquesFisiquesView } from './fisiques/EstadistiquesFisiquesView';
-import { getBestScores, fetchPhysicalDataFromCloud } from '../utils/physicalStorage';
+import { getBestScores, fetchPhysicalDataFromCloud, forceSyncAllPhysicalData } from '../utils/physicalStorage';
 import { evaluateGlobalFitness } from '../utils/physicalScoring';
 import { ShieldRenderer } from './ShieldRenderer';
 import { OfficialEmblem } from './OfficialEmblem';
@@ -19,7 +19,9 @@ import {
   AlertCircle,
   TrendingUp,
   Sparkles,
-  BookOpen
+  BookOpen,
+  RefreshCw,
+  CloudCheck
 } from 'lucide-react';
 
 interface ModeFisiquesProps {
@@ -41,6 +43,9 @@ export const ModeFisiques: React.FC<ModeFisiquesProps> = ({ user, onSwitchToEstu
     } catch (e) {}
     return 'press_banca';
   });
+
+  const [isSyncing, setIsSyncing] = useState<boolean>(false);
+  const [syncSuccessToast, setSyncSuccessToast] = useState<string | null>(null);
 
   useEffect(() => {
     try {
@@ -72,11 +77,29 @@ export const ModeFisiques: React.FC<ModeFisiquesProps> = ({ user, onSwitchToEstu
     setBestScores(getBestScores(user.uid || user.email, user.email));
   };
 
+  const handleManualSync = async () => {
+    setIsSyncing(true);
+    try {
+      const res = await forceSyncAllPhysicalData(user.uid, user.email);
+      refreshBestScores();
+      setSyncSuccessToast(`Sincronització completada! (${res.recordsCount} proves, ${res.sessionsCount} entrenaments)`);
+      setTimeout(() => setSyncSuccessToast(null), 3500);
+    } catch (err) {
+      console.warn('Sync error:', err);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
   useEffect(() => {
     refreshBestScores();
     fetchPhysicalDataFromCloud(user.uid, user.email).then(() => {
       refreshBestScores();
     }).catch(console.warn);
+
+    const handleSyncEvent = () => refreshBestScores();
+    window.addEventListener('physical_records_updated', handleSyncEvent);
+    return () => window.removeEventListener('physical_records_updated', handleSyncEvent);
   }, [user.email, user.uid]);
 
   const globalEval = evaluateGlobalFitness(
@@ -87,6 +110,14 @@ export const ModeFisiques: React.FC<ModeFisiquesProps> = ({ user, onSwitchToEstu
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-6 space-y-6">
+      {/* Toast de confirmació de sincronització */}
+      {syncSuccessToast && (
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-bold text-xs rounded-2xl shadow-xl flex items-center gap-2 border border-white/20 animate-in slide-in-from-top duration-200">
+          <CheckCircle2 className="w-4 h-4 text-emerald-200" />
+          <span>{syncSuccessToast}</span>
+        </div>
+      )}
+
       {/* HEADER AMB NAVEGACIÓ I COMMUTADOR DE MODE */}
       <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-4 sm:p-5 bg-gradient-to-r from-slate-900 via-slate-900 to-slate-950 border border-slate-800 rounded-3xl shadow-xl">
         <div className="flex items-center gap-3.5 w-full sm:w-auto">
@@ -112,15 +143,28 @@ export const ModeFisiques: React.FC<ModeFisiquesProps> = ({ user, onSwitchToEstu
           </div>
         </div>
 
-        {/* Botó destacat per canviar a Mode Estudi */}
-        <button
-          type="button"
-          onClick={onSwitchToEstudi}
-          className="w-full sm:w-auto px-4 py-2.5 bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-white font-bold text-xs rounded-2xl shadow-md shadow-sky-500/20 transition-all flex items-center justify-center gap-2 cursor-pointer border border-sky-400/30 shrink-0"
-        >
-          <BookOpen className="w-4 h-4" />
-          <span>Canviar a Mode Estudi</span>
-        </button>
+        {/* Accions de capçalera: Sincronitzador Multi-dispositiu i Canvi a Mode Estudi */}
+        <div className="flex items-center gap-2 w-full sm:w-auto">
+          <button
+            type="button"
+            onClick={handleManualSync}
+            disabled={isSyncing}
+            className="flex-1 sm:flex-initial px-3.5 py-2.5 bg-slate-800/80 hover:bg-slate-700 text-slate-200 hover:text-white font-bold text-xs rounded-2xl border border-slate-700 transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+            title="Sincronitzar marques i entrenaments entre mòbil i ordinador"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 text-amber-400 ${isSyncing ? 'animate-spin' : ''}`} />
+            <span>{isSyncing ? 'Sincronitzant...' : 'Sincronitzar Núvol'}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={onSwitchToEstudi}
+            className="flex-1 sm:flex-initial px-4 py-2.5 bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-white font-bold text-xs rounded-2xl shadow-md shadow-sky-500/20 transition-all flex items-center justify-center gap-2 cursor-pointer border border-sky-400/30 shrink-0"
+          >
+            <BookOpen className="w-4 h-4" />
+            <span>Mode Estudi</span>
+          </button>
+        </div>
       </div>
 
       {/* RESUM DE MARQUES ACTUALS I QUALIFICACIÓ GLOBAL */}
